@@ -32,6 +32,12 @@ function setup() {
   applyResponsiveLayout();
   cachedG = createGraphics(width, height);
 
+  // Prevent iOS pinch/scroll on the canvas only (do NOT block UI taps)
+  const c = document.querySelector('canvas');
+  c.style.touchAction = 'none';
+  c.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  c.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
   textAlign(CENTER, CENTER);
 }
 
@@ -51,11 +57,6 @@ function windowResized() {
   applyResponsiveLayout();
   markDirty();
 }
-
-/* ---- iOS Safari zoom prevention extra safety ---- */
-function touchStarted() { return false; }
-function touchMoved() { return false; }
-function touchEnded() { return false; }
 
 /* ---------------- Page + layout ---------------- */
 
@@ -237,6 +238,7 @@ function updateDivLabel() {
   divLabel.html(label);
 }
 
+// Allow only 0 or even >= 2
 function normalizeStripeCount(n) {
   if (n <= 0) return 0;
   if (n === 1) return 2;
@@ -343,7 +345,7 @@ function ensureRendered() {
   dirty = false;
 }
 
-/* ---------------- Pipeline with state mapping ---------------- */
+/* ---------------- Pipeline ---------------- */
 
 function runPipeline() {
   let oriented = rotateSquareBySteps(srcSquare, rotSteps);
