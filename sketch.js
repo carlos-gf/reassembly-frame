@@ -9,9 +9,9 @@ let maxStripes = 80;
 let toBW = false;
 let rotSteps = 3;
 
-let container;      // wraps canvas + UI
-let uiWrap;         // UI panel
-let controlsRow;    // buttons row
+let container;
+let uiWrap;
+let controlsRow;
 let fileInput;
 let bwBtn, rotBtn, saveBtn, minusBtn, plusBtn;
 let divLabel;
@@ -71,7 +71,6 @@ function setupContainer() {
   container.style('justify-content', 'center');
   container.style('gap', '14px');
 
-  // Move canvas into container
   const c = document.querySelector('canvas');
   container.elt.appendChild(c);
   c.style.display = 'block';
@@ -82,12 +81,10 @@ function applyResponsiveLayout() {
   const pad = 24;
   const isHorizontal = window.innerWidth >= window.innerHeight;
 
-  // Reserve UI space depending on orientation
   let availW, availH, canvasSide;
 
   if (isHorizontal) {
-    // UI to the right
-    const uiW = 240; // fixed-ish panel width
+    const uiW = 260;
     availW = window.innerWidth - pad * 2 - uiW - 14;
     availH = window.innerHeight - pad * 2;
     canvasSide = Math.max(320, Math.floor(Math.min(availW, availH)));
@@ -96,8 +93,7 @@ function applyResponsiveLayout() {
     uiWrap.style('width', `${uiW}px`);
     uiWrap.style('max-width', `${uiW}px`);
   } else {
-    // UI under
-    const uiH = 150; // reserved height under canvas
+    const uiH = 160;
     availW = window.innerWidth - pad * 2;
     availH = window.innerHeight - pad * 2 - uiH - 14;
     canvasSide = Math.max(320, Math.floor(Math.min(availW, availH)));
@@ -109,9 +105,6 @@ function applyResponsiveLayout() {
 
   resizeCanvas(canvasSide, canvasSide);
   cachedG = createGraphics(width, height);
-
-  // keep UI elements aligned nicely
-  uiWrap.style('box-sizing', 'border-box');
 }
 
 /* ---------------- UI ---------------- */
@@ -219,19 +212,27 @@ function styleControl(el) {
 }
 
 function updateDivLabel() {
-  const label = stripeCount <= 1 ? 'Divisions: 0 (mirrored only)' : `Divisions: ${stripeCount}`;
+  // Your state mapping:
+  // 0 = original
+  // 2 = mirrored
+  // 4+ = mirrored + stripe reorder
+  let label = `Divisions: ${stripeCount}`;
+  if (stripeCount === 0) label = 'Divisions: 0 (original)';
+  if (stripeCount === 2) label = 'Divisions: 2 (mirrored)';
+  if (stripeCount >= 4) label = `Divisions: ${stripeCount} (processed)`;
   divLabel.html(label);
 }
 
+// Allow only 0 or even >= 2
 function normalizeStripeCount(n) {
-  if (n <= 1) return n;      // allow 0 or 1 as "no division"
-  return Math.floor(n / 2) * 2; // force even
+  if (n <= 0) return 0;
+  if (n === 1) return 2;
+  return Math.floor(n / 2) * 2;
 }
 
-/* ---------------- Keyboard controls (kept) ---------------- */
+/* ---------------- Keyboard controls ---------------- */
 
 function keyPressed() {
-  // divisions
   if (keyCode === RIGHT_ARROW) {
     stripeCount = Math.min(maxStripes, stripeCount + 2);
     stripeCount = normalizeStripeCount(stripeCount);
@@ -282,17 +283,17 @@ function keyPressed() {
 
 function drawPlaceholder() {
   noStroke();
-  fill(220);
+  fill(230);
   rect(0, 0, width, height);
 
-  fill(120);
-  textSize(16);
-  text("Choose an image using the file input", width / 2, height / 2);
-
-  // thin border
   noFill();
   stroke(200);
   rect(0.5, 0.5, width - 1, height - 1);
+
+  fill(120);
+  noStroke();
+  textSize(16);
+  text("Choose an image using the file input", width / 2, height / 2);
 }
 
 /* ---------------- Image loading ---------------- */
@@ -304,9 +305,7 @@ function handleFile(file) {
     srcImg = img;
 
     let sq = cropCenterSquare(srcImg);
-    if (sq.width > MAX_WORKING_SIZE) {
-      sq.resize(MAX_WORKING_SIZE, MAX_WORKING_SIZE);
-    }
+    if (sq.width > MAX_WORKING_SIZE) sq.resize(MAX_WORKING_SIZE, MAX_WORKING_SIZE);
     srcSquare = sq;
 
     rotSteps = 3;
@@ -331,15 +330,28 @@ function ensureRendered() {
   dirty = false;
 }
 
-/* ---------------- Pipeline ---------------- */
+/* ---------------- Pipeline with your new state mapping ---------------- */
 
 function runPipeline() {
+  // Prepare the base processed square (rotation + optional grayscale)
+  let oriented = rotateSquareBySteps(srcSquare, rotSteps);
+  if (toBW) oriented = toGrayscale(oriented);
+
+  // 0 = show original (cropped square), fitted to canvas
+  if (stripeCount === 0) {
+    const g = createGraphics(width, height);
+    g.background(255);
+    g.imageMode(CENTER);
+    const s = Math.min(width / oriented.width, height / oriented.height);
+    g.image(oriented, width / 2, height / 2, oriented.width * s, oriented.height * s);
+    return g;
+  }
+
+  // For 2 and above, we work from the 2x2 mirrored base
   const qW = Math.floor(width / 2);
   const qH = Math.floor(height / 2);
 
-  let oriented = rotateSquareBySteps(srcSquare, rotSteps);
   let fitted = fitCenter(oriented, qW, qH);
-  if (toBW) fitted = toGrayscale(fitted);
 
   const tl = fitted;
   const tr = mirrorHorizontal(fitted);
@@ -353,8 +365,10 @@ function runPipeline() {
   base.image(bl, 0, qH);
   base.image(br, qW, qH);
 
-  if (stripeCount <= 1) return base;
+  // 2 = show mirrored only
+  if (stripeCount === 2) return base;
 
+  // 4+ = mirrored + stripe reorder
   const step1 = reorderVerticalStripes(base, stripeCount);
   const step2 = reorderHorizontalStripes(step1, stripeCount);
   return step2;
