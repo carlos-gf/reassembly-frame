@@ -9,22 +9,19 @@ let maxStripes = 80;
 let toBW = false;
 let rotSteps = 3;
 
-let ui;          // overlay container
-let fileInput;   // visible, reliable on iPad
+let ui;
+let fileInput;
 let bwBtn, rotBtn, saveBtn, minusBtn, plusBtn;
 
 let cachedG = null;
 let dirty = true;
 
-// Controls memory. Bigger = sharper, but heavier.
-// 1024–1600 is a good range for iPad + browser stability.
 const MAX_WORKING_SIZE = 1400;
 
 function setup() {
   createCanvas(900, 900);
   pixelDensity(1);
 
-  // Make sure canvas is behind UI
   const c = document.querySelector('canvas');
   c.style.position = 'relative';
   c.style.zIndex = '0';
@@ -52,8 +49,6 @@ function draw() {
   drawHUD();
 }
 
-/* ---------------- UI ---------------- */
-
 function setupUI() {
   ui = createDiv();
   ui.style('position', 'fixed');
@@ -69,7 +64,7 @@ function setupUI() {
   ui.style('border-radius', '10px');
   ui.style('backdrop-filter', 'blur(6px)');
 
-  // Visible file input = most reliable on iPad Safari
+  // Visible file input is most reliable on iPad
   fileInput = createFileInput(handleFile);
   fileInput.parent(ui);
   fileInput.attribute('accept', 'image/*');
@@ -99,14 +94,14 @@ function setupUI() {
   minusBtn.mousePressed(() => {
     if (!ready) return;
     stripeCount = Math.max(minStripes, stripeCount - 2);
-    if (stripeCount > 0) stripeCount = Math.floor(stripeCount / 2) * 2;
+    stripeCount = normalizeStripeCount(stripeCount);
     markDirty();
   });
 
   plusBtn.mousePressed(() => {
     if (!ready) return;
     stripeCount = Math.min(maxStripes, stripeCount + 2);
-    if (stripeCount > 0) stripeCount = Math.floor(stripeCount / 2) * 2;
+    stripeCount = normalizeStripeCount(stripeCount);
     markDirty();
   });
 
@@ -125,7 +120,11 @@ function setupUI() {
   saveBtn.mousePressed(() => {
     if (!ready) return;
     ensureRendered();
-    saveCanvas(cachedG, `result_${stamp()}_div${stripeCount}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`, 'png');
+    saveCanvas(
+      cachedG,
+      `result_${stamp()}_div${stripeCount}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`,
+      'png'
+    );
   });
 }
 
@@ -139,7 +138,10 @@ function styleControl(el) {
   el.style('pointer-events', 'auto');
 }
 
-/* ---------------- Memory safe image load ---------------- */
+function normalizeStripeCount(n) {
+  if (n <= 1) return n; // allow 0 or 1 as "no division"
+  return Math.floor(n / 2) * 2; // force even
+}
 
 function handleFile(file) {
   if (!file || file.type !== 'image') return;
@@ -167,19 +169,15 @@ function handleFile(file) {
   });
 }
 
-/* ---------------- Render caching ---------------- */
-
 function markDirty() {
   dirty = true;
 }
 
 function ensureRendered() {
   if (!dirty) return;
-  cachedG = runPipeline(); // only re-render on changes
+  cachedG = runPipeline();
   dirty = false;
 }
-
-/* ---------------- Pipeline ---------------- */
 
 function runPipeline() {
   const qW = Math.floor(width / 2);
@@ -208,8 +206,6 @@ function runPipeline() {
   return step2;
 }
 
-/* ---------------- Helpers ---------------- */
-
 function stamp() {
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
@@ -235,6 +231,7 @@ function cropCenterSquare(img) {
 function rotateSquareBySteps(img, steps) {
   steps = ((steps % 4) + 4) % 4;
   if (steps === 0) return img;
+
   const side = img.width;
   const g = createGraphics(side, side);
   g.background(255);
@@ -295,38 +292,44 @@ function alternatingEndsOrder(n) {
   return order;
 }
 
+// FIXED: uses EXACTLY nStripes stripes (no drift)
 function reorderVerticalStripes(srcG, nStripes) {
   const w = srcG.width, h = srcG.height;
-  const stripeW = Math.max(1, Math.floor(w / nStripes));
-  const count = Math.ceil(w / stripeW);
-  const order = alternatingEndsOrder(count);
   const out = createGraphics(w, h);
   out.background(255);
+
+  const order = alternatingEndsOrder(nStripes);
+
   let dstX = 0;
-  for (let i = 0; i < count; i++) {
-    const srcX = order[i] * stripeW;
-    const sw = Math.min(stripeW, w - srcX);
-    out.copy(srcG, srcX, 0, sw, h, dstX, 0, sw, h);
+  for (let i = 0; i < nStripes; i++) {
+    const idx = order[i];
+    const x0 = Math.round((idx * w) / nStripes);
+    const x1 = Math.round(((idx + 1) * w) / nStripes);
+    const sw = Math.max(1, x1 - x0);
+
+    out.copy(srcG, x0, 0, sw, h, dstX, 0, sw, h);
     dstX += sw;
-    if (dstX >= w) break;
   }
   return out;
 }
 
+// FIXED: uses EXACTLY nStripes stripes (no drift)
 function reorderHorizontalStripes(srcG, nStripes) {
   const w = srcG.width, h = srcG.height;
-  const stripeH = Math.max(1, Math.floor(h / nStripes));
-  const count = Math.ceil(h / stripeH);
-  const order = alternatingEndsOrder(count);
   const out = createGraphics(w, h);
   out.background(255);
+
+  const order = alternatingEndsOrder(nStripes);
+
   let dstY = 0;
-  for (let i = 0; i < count; i++) {
-    const srcY = order[i] * stripeH;
-    const sh = Math.min(stripeH, h - srcY);
-    out.copy(srcG, 0, srcY, w, sh, 0, dstY, w, sh);
+  for (let i = 0; i < nStripes; i++) {
+    const idx = order[i];
+    const y0 = Math.round((idx * h) / nStripes);
+    const y1 = Math.round(((idx + 1) * h) / nStripes);
+    const sh = Math.max(1, y1 - y0);
+
+    out.copy(srcG, 0, y0, w, sh, 0, dstY, w, sh);
     dstY += sh;
-    if (dstY >= h) break;
   }
   return out;
 }
