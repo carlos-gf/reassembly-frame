@@ -21,7 +21,7 @@ let rotSteps = 0; // user rotation only (0..3)
 
 // UI
 let container, uiWrap, controlsRow;
-let fileInput, bwBtn, rotBtn, saveBtn, minusBtn, plusBtn;
+let fileInput, fileBtn, bwBtn, rotBtn, saveBtn, minusBtn, plusBtn;
 let divLabel;
 let tabRow, tabLensBtn, tabColorBtn;
 
@@ -52,7 +52,11 @@ function setup() {
   cachedG = createGraphics(width, height);
   cachedG.noSmooth();
 
-  document.querySelector('canvas').style.touchAction = 'none';
+  const cnv = document.querySelector('canvas');
+  cnv.style.touchAction = 'none';
+  cnv.tabIndex = 0;
+  cnv.addEventListener('pointerdown', () => cnv.focus());
+
   textAlign(CENTER, CENTER);
 }
 
@@ -168,9 +172,23 @@ function setupUI() {
   controlsRow.style('flex-wrap', 'wrap');
   controlsRow.style('justify-content', 'center');
 
+  // --- Custom "Choose file" button that matches style ---
+  fileBtn = createButton('Choose image');
+  fileBtn.parent(controlsRow);
+  styleControl(fileBtn);
+
   fileInput = createFileInput(handleFile);
   fileInput.parent(controlsRow);
-  styleControl(fileInput);
+
+  // Hide the real input completely (no filename shown)
+  fileInput.elt.style.position = 'absolute';
+  fileInput.elt.style.left = '-9999px';
+  fileInput.elt.style.width = '1px';
+  fileInput.elt.style.height = '1px';
+  fileInput.elt.style.opacity = '0';
+  fileInput.elt.tabIndex = -1;
+
+  fileBtn.mousePressed(() => fileInput.elt.click());
 
   const stepper = createDiv();
   stepper.parent(controlsRow);
@@ -203,9 +221,9 @@ function setupUI() {
   minusBtn.mousePressed(() => stepValue(-1));
   plusBtn.mousePressed(() => stepValue(+1));
 
-  bwBtn.mousePressed(() => { toBW = !toBW; markDirty(); });
-  rotBtn.mousePressed(() => { rotSteps = (rotSteps + 1) % 4; markDirty(); });
-  saveBtn.mousePressed(saveImage);
+  bwBtn.mousePressed(() => { if (!ready) return; toBW = !toBW; markDirty(); });
+  rotBtn.mousePressed(() => { if (!ready) return; rotSteps = (rotSteps + 1) % 4; markDirty(); });
+  saveBtn.mousePressed(() => saveImage());
 
   updateLabel();
 }
@@ -216,7 +234,10 @@ function styleControl(el) {
   el.style('border-radius', '0');
   el.style('padding', '8px 10px');
   el.style('cursor', 'pointer');
+
   el.elt.style.touchAction = 'manipulation';
+  el.elt.style.webkitTapHighlightColor = 'transparent';
+  el.elt.style.userSelect = 'none';
 }
 
 /* ---------------- State ---------------- */
@@ -264,6 +285,23 @@ function updateLabel() {
 function normalizeLensDivisions(n) {
   if (n <= 0) return 0;
   return Math.floor(n / 2) * 2;
+}
+
+/* ---------------- Keyboard controls ---------------- */
+
+function keyPressed() {
+  // Keep keyboard interaction working even if focus moves
+  if (key === '1') { setMode(MODE_LENS); return; }
+  if (key === '2') { setMode(MODE_COLOR); return; }
+
+  if (!ready) return;
+
+  if (keyCode === LEFT_ARROW) { stepValue(-1); return; }
+  if (keyCode === RIGHT_ARROW) { stepValue(+1); return; }
+
+  if (key === 'b' || key === 'B') { toBW = !toBW; markDirty(); return; }
+  if (key === 'r' || key === 'R') { rotSteps = (rotSteps + 1) % 4; markDirty(); return; }
+  if (key === 's' || key === 'S') { saveImage(); return; }
 }
 
 /* ---------------- Image loading ---------------- */
@@ -323,18 +361,15 @@ function updateColorAnimation() {
 function renderColorAnimatedFrame() {
   let img = applyUserTransforms(srcImgFull);
 
-  // frames == columns (square sampling grid)
-  const gridN = Math.max(COLOR_MIN, Math.min(COLOR_MAX, colorFrames));
-  const bands = buildColorBands(img, gridN); // returns gridN frames each with gridN columns
+  const n = Math.max(COLOR_MIN, Math.min(COLOR_MAX, colorFrames));
+  const bands = buildColorBands(img, n);
   const colors = bands[colorFrameIndex];
 
   const g = createGraphics(width, height);
   g.noSmooth();
   g.background(255);
 
-  const n = colors.length;
   const stripeW = width / n;
-
   g.noStroke();
   for (let i = 0; i < n; i++) {
     const c = colors[i];
@@ -491,12 +526,12 @@ function reorderHorizontalStripes(src, n) {
 
 /*
   Color bands:
-  frames = N, columns = N
+  N frames and N columns (square sampling)
   returns: Array(N) of Array(N) RGB triplets
 */
 function buildColorBands(img, n) {
   const frames = n;
-  const cols = n; // <-- THE FIX: columns match frames
+  const cols = n;
 
   const out = [];
   img.loadPixels();
@@ -512,7 +547,6 @@ function buildColorBands(img, n) {
 
       let r = 0, g = 0, bl = 0, cnt = 0;
 
-      // Light subsampling for mobile friendliness
       const xStep = max(1, floor((x1 - x0) / 3));
       const yStep = max(1, floor((y1 - y0) / 3));
 
@@ -553,7 +587,6 @@ function saveImage() {
     ensureRendered();
     saveCanvas(cachedG, 'reassembly_lens', 'png');
   } else {
-    // Save the currently displayed color frame
     const g = renderColorAnimatedFrame();
     saveCanvas(g, 'reassembly_color', 'png');
   }
