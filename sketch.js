@@ -52,6 +52,11 @@ function windowResized() {
   markDirty();
 }
 
+/* ---- iOS Safari zoom prevention extra safety ---- */
+function touchStarted() { return false; }
+function touchMoved() { return false; }
+function touchEnded() { return false; }
+
 /* ---------------- Page + layout ---------------- */
 
 function setupPage() {
@@ -125,7 +130,6 @@ function setupUI() {
   controlsRow.style('justify-content', 'center');
   controlsRow.style('flex-wrap', 'wrap');
 
-  // Visible file input is most reliable on iPad
   fileInput = createFileInput(handleFile);
   fileInput.parent(controlsRow);
   fileInput.attribute('accept', 'image/*');
@@ -206,16 +210,17 @@ function styleControl(el) {
   el.style('padding', '8px 10px');
   el.style('border', '1px solid #000');
   el.style('background', '#fff');
-  el.style('border-radius', '0px'); // pointy corners
+  el.style('border-radius', '0px');
   el.style('cursor', 'pointer');
   el.style('pointer-events', 'auto');
+
+  // Extra iOS Safari help
+  el.elt.style.touchAction = 'manipulation';
+  el.elt.style.webkitTapHighlightColor = 'transparent';
+  el.elt.style.userSelect = 'none';
 }
 
 function updateDivLabel() {
-  // Your state mapping:
-  // 0 = original
-  // 2 = mirrored
-  // 4+ = mirrored + stripe reorder
   let label = `Divisions: ${stripeCount}`;
   if (stripeCount === 0) label = 'Divisions: 0 (original)';
   if (stripeCount === 2) label = 'Divisions: 2 (mirrored)';
@@ -223,7 +228,6 @@ function updateDivLabel() {
   divLabel.html(label);
 }
 
-// Allow only 0 or even >= 2
 function normalizeStripeCount(n) {
   if (n <= 0) return 0;
   if (n === 1) return 2;
@@ -330,14 +334,13 @@ function ensureRendered() {
   dirty = false;
 }
 
-/* ---------------- Pipeline with your new state mapping ---------------- */
+/* ---------------- Pipeline ---------------- */
 
 function runPipeline() {
-  // Prepare the base processed square (rotation + optional grayscale)
   let oriented = rotateSquareBySteps(srcSquare, rotSteps);
   if (toBW) oriented = toGrayscale(oriented);
 
-  // 0 = show original (cropped square), fitted to canvas
+  // 0 = original
   if (stripeCount === 0) {
     const g = createGraphics(width, height);
     g.background(255);
@@ -347,7 +350,7 @@ function runPipeline() {
     return g;
   }
 
-  // For 2 and above, we work from the 2x2 mirrored base
+  // 2+ = mirrored base
   const qW = Math.floor(width / 2);
   const qH = Math.floor(height / 2);
 
@@ -365,10 +368,8 @@ function runPipeline() {
   base.image(bl, 0, qH);
   base.image(br, qW, qH);
 
-  // 2 = show mirrored only
   if (stripeCount === 2) return base;
 
-  // 4+ = mirrored + stripe reorder
   const step1 = reorderVerticalStripes(base, stripeCount);
   const step2 = reorderHorizontalStripes(step1, stripeCount);
   return step2;
