@@ -69,6 +69,7 @@ What remains becomes more legible, not less.
 Authorship & Use
 
 © 2025 Carlos García Fernández. All rights reserved.
+https://carlos-gf.com
 
 This project, including its concept, visual logic, interaction design, and source code, is shared publicly for viewing and discussion.
 
