@@ -1,5 +1,6 @@
 let srcImg = null;
-let srcSquare = null;
+let srcSquare = null;       // cropped square, as-is (for Original + Mirrored)
+let srcSquareProc = null;   // same crop, rotated 90° clockwise (for stripe processing)
 let ready = false;
 
 // Two modes
@@ -18,7 +19,7 @@ const COLOR_MIN = 1;
 const COLOR_MAX = 200;
 
 let toBW = false;
-let rotSteps = 3;
+let rotSteps = 0;              // user rotation (0,90,180,270)
 
 let container;
 let uiWrap;
@@ -413,7 +414,12 @@ function handleFile(file) {
     if (sq.width > MAX_WORKING_SIZE) sq.resize(MAX_WORKING_SIZE, MAX_WORKING_SIZE);
     srcSquare = sq;
 
-    rotSteps = 3;
+    // KEY CHANGE:
+    // Create a pre-rotated (90° clockwise) version used ONLY for stripe processing.
+    // Original and mirrored views still use srcSquare.
+    srcSquareProc = rotateCW90(srcSquare);
+
+    rotSteps = 0;
     lensDivisions = 20;
     colorBands = 20;
     toBW = false;
@@ -440,7 +446,20 @@ function ensureRendered() {
 /* ---------------- Pipeline ---------------- */
 
 function runPipeline() {
-  let oriented = rotateSquareBySteps(srcSquare, rotSteps);
+  if (!srcSquare) return cachedG;
+
+  // Choose base image:
+  // - Lens mode: apply the hidden 90° CW pre-rotation ONLY when we are going to slice/reorder stripes (div >= 4)
+  // - Otherwise (original and mirrored states), do NOT apply that pre-rotation
+  // - Color mode uses the non-pre-rotated base by default
+  let base = srcSquare;
+
+  if (mode === MODE_LENS && lensDivisions >= 4) {
+    base = srcSquareProc || srcSquare;
+  }
+
+  // Apply user-facing adjustments
+  let oriented = rotateSquareBySteps(base, rotSteps);
   if (toBW) oriented = toGrayscale(oriented);
 
   if (mode === MODE_COLOR) {
@@ -450,7 +469,7 @@ function runPipeline() {
   // MODE_LENS
   const stripeCount = lensDivisions;
 
-  // 0 = show original cropped square
+  // 0 = show original cropped square (no hidden pre-rotation)
   if (stripeCount === 0) {
     const g = createGraphics(width, height);
     g.noSmooth();
@@ -472,35 +491,32 @@ function runPipeline() {
   const bl = mirrorVertical(fitted);
   const br = mirrorVertical(tr);
 
-  const base = createGraphics(width, height);
-  base.noSmooth();
-  base.background(255);
-  base.imageMode(CORNER);
+  const baseG = createGraphics(width, height);
+  baseG.noSmooth();
+  baseG.background(255);
+  baseG.imageMode(CORNER);
 
-  base.image(tl, 0, 0);
-  base.image(tr, qW, 0);
-  base.image(bl, 0, qH);
-  base.image(br, qW, qH);
+  baseG.image(tl, 0, 0);
+  baseG.image(tr, qW, 0);
+  baseG.image(bl, 0, qH);
+  baseG.image(br, qW, qH);
 
-  // 2 = mirrored only
-  if (stripeCount === 2) return base;
+  // 2 = mirrored only (still no stripe slicing)
+  if (stripeCount === 2) return baseG;
 
-  // 4+ = reorder stripes
-  const step1 = reorderVerticalStripes(base, stripeCount);
+  // 4+ = reorder stripes (this is where the hidden 90° CW pre-rotation matters)
+  const step1 = reorderVerticalStripes(baseG, stripeCount);
   const step2 = reorderHorizontalStripes(step1, stripeCount);
   return step2;
 }
 
 /* ---------------- Color abstraction ---------------- */
 
-// Renders the image as stacked horizontal bands.
-// Each band color = average color of that region (fast + stable on iPad).
 function renderColorAbstraction(img, bands) {
   const g = createGraphics(width, height);
   g.noSmooth();
   g.background(255);
 
-  // Sample on a smaller copy for speed
   const sampleSide = Math.min(420, img.width);
   const sample = createImage(sampleSide, sampleSide);
   sample.copy(img, 0, 0, img.width, img.height, 0, 0, sampleSide, sampleSide);
@@ -515,10 +531,8 @@ function renderColorAbstraction(img, bands) {
     const yA = Math.max(0, y0);
     const yB = Math.max(yA + 1, y1);
 
-    // Average color across the band
     let r = 0, gg = 0, bb = 0, count = 0;
 
-    // Step through pixels (skip some for speed)
     const xStep = 2;
     const yStep = 1;
 
@@ -568,6 +582,21 @@ function cropCenterSquare(img) {
   const out = createImage(side, side);
   out.copy(img, x, y, side, side, 0, 0, side, side);
   return out;
+}
+
+// Rotate a square image 90° clockwise once, at load time (hidden correction)
+function rotateCW90(img) {
+  const side = img.width;
+  const g = createGraphics(side, side);
+  g.noSmooth();
+  g.background(255);
+  g.push();
+  g.translate(side / 2, side / 2);
+  g.rotate(HALF_PI); // clockwise in p5.js coordinate system
+  g.imageMode(CENTER);
+  g.image(img, 0, 0);
+  g.pop();
+  return g.get();
 }
 
 function rotateSquareBySteps(img, steps) {
