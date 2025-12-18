@@ -83,30 +83,40 @@ function setupContainer() {
 }
 
 function applyResponsiveLayout() {
-  const pad = 24;
+  const isSmall = Math.min(window.innerWidth, window.innerHeight) < 520;
+  const pad = isSmall ? 12 : 24;
+  const gap = 14;
+
   const isHorizontal = window.innerWidth >= window.innerHeight;
 
   let availW, availH, canvasSide;
 
   if (isHorizontal) {
-    const uiW = 260;
-    availW = window.innerWidth - pad * 2 - uiW - 14;
+    const uiWTarget = isSmall ? 200 : 260;
+    const uiW = Math.min(uiWTarget, Math.max(160, Math.floor(window.innerWidth * 0.32)));
+
+    availW = window.innerWidth - pad * 2 - uiW - gap;
     availH = window.innerHeight - pad * 2;
-    canvasSide = Math.max(320, Math.floor(Math.min(availW, availH)));
+
+    canvasSide = Math.floor(Math.max(180, Math.min(availW, availH)));
 
     container.style('flex-direction', 'row');
     uiWrap.style('width', `${uiW}px`);
     uiWrap.style('max-width', `${uiW}px`);
   } else {
-    const uiH = 160;
+    const uiH = isSmall ? 170 : 160;
+
     availW = window.innerWidth - pad * 2;
-    availH = window.innerHeight - pad * 2 - uiH - 14;
-    canvasSide = Math.max(320, Math.floor(Math.min(availW, availH)));
+    availH = window.innerHeight - pad * 2 - uiH - gap;
+
+    canvasSide = Math.floor(Math.max(180, Math.min(availW, availH)));
 
     container.style('flex-direction', 'column');
     uiWrap.style('width', `${canvasSide}px`);
     uiWrap.style('max-width', `${canvasSide}px`);
   }
+
+  canvasSide = Math.min(canvasSide, window.innerWidth - pad * 2);
 
   resizeCanvas(canvasSide, canvasSide);
   cachedG = createGraphics(width, height);
@@ -214,7 +224,6 @@ function styleControl(el) {
   el.style('cursor', 'pointer');
   el.style('pointer-events', 'auto');
 
-  // Extra iOS Safari help
   el.elt.style.touchAction = 'manipulation';
   el.elt.style.webkitTapHighlightColor = 'transparent';
   el.elt.style.userSelect = 'none';
@@ -334,13 +343,13 @@ function ensureRendered() {
   dirty = false;
 }
 
-/* ---------------- Pipeline ---------------- */
+/* ---------------- Pipeline with state mapping ---------------- */
 
 function runPipeline() {
   let oriented = rotateSquareBySteps(srcSquare, rotSteps);
   if (toBW) oriented = toGrayscale(oriented);
 
-  // 0 = original
+  // 0 = show original cropped square
   if (stripeCount === 0) {
     const g = createGraphics(width, height);
     g.background(255);
@@ -368,8 +377,10 @@ function runPipeline() {
   base.image(bl, 0, qH);
   base.image(br, qW, qH);
 
+  // 2 = mirrored only
   if (stripeCount === 2) return base;
 
+  // 4+ = reorder stripes
   const step1 = reorderVerticalStripes(base, stripeCount);
   const step2 = reorderHorizontalStripes(step1, stripeCount);
   return step2;
