@@ -1,13 +1,14 @@
-let srcImgFull = null;   // full image for Color mode
-let srcSquare = null;    // cropped square for Lens mode
+// Updated sketch.js
+// Change: Up / Down arrows adjust value by 10 (Lens: ±20 because step is 2; Color: ±10)
+
+let srcImgFull = null;
+let srcSquare = null;
 let ready = false;
 
-// Modes
 const MODE_LENS = 'lens';
 const MODE_COLOR = 'color';
 let mode = MODE_LENS;
 
-// Parameters
 let lensDivisions = 20;  // 0,2,4...
 let colorFrames = 20;    // 1..80
 
@@ -17,30 +18,23 @@ const COLOR_MIN = 1;
 const COLOR_MAX = 80;
 
 let toBW = false;
-let rotSteps = 0; // user rotation only (0..3)
+let rotSteps = 0;
 
-// UI
 let container, uiWrap, controlsRow;
 let fileInput, fileBtn, bwBtn, rotBtn, saveBtn, minusBtn, plusBtn;
 let divLabel;
 let tabRow, tabLensBtn, tabColorBtn;
 
-// Lens render cache
 let cachedG = null;
 let dirty = true;
 
-// Performance
 const MAX_WORKING_SIZE = 1600;
 
-// Color animation
 let colorFrameIndex = 0;
 let lastFrameMs = 0;
 const frameIntervalMs = 180;
 
-// Global keyboard hook flag
 let keyboardHooked = false;
-
-/* ---------------- Setup ---------------- */
 
 function setup() {
   createCanvas(900, 900);
@@ -58,7 +52,6 @@ function setup() {
   const cnv = document.querySelector('canvas');
   cnv.style.touchAction = 'none';
 
-  // ✅ Robust keyboard support (works regardless of focus)
   hookGlobalKeyboard();
 
   textAlign(CENTER, CENTER);
@@ -72,7 +65,6 @@ function draw() {
 
   background(255);
 
-  // COLOR MODE — always redraw (animated)
   if (mode === MODE_COLOR) {
     updateColorAnimation();
     const g = renderColorAnimatedFrame();
@@ -80,7 +72,6 @@ function draw() {
     return;
   }
 
-  // LENS MODE — cached
   ensureRendered();
   image(cachedG, 0, 0);
 }
@@ -97,13 +88,12 @@ function hookGlobalKeyboard() {
   keyboardHooked = true;
 
   window.addEventListener('keydown', (e) => {
-    // Ignore typing into input fields (safety)
     const t = e.target;
     const tag = t && t.tagName ? t.tagName.toLowerCase() : '';
     if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
 
     // prevent page scroll on arrows/space
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === ' ' ) {
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(e.key)) {
       e.preventDefault();
     }
 
@@ -113,15 +103,16 @@ function hookGlobalKeyboard() {
 
     if (!ready) return;
 
-    // Step with arrows
+    // Small steps
     if (e.key === 'ArrowLeft') { stepValue(-1); return; }
     if (e.key === 'ArrowRight') { stepValue(+1); return; }
 
-    // Toggles
+    // Big steps (±10)
+    if (e.key === 'ArrowUp') { stepValue(+10); return; }
+    if (e.key === 'ArrowDown') { stepValue(-10); return; }
+
     if (e.key === 'b' || e.key === 'B') { toBW = !toBW; markDirty(); return; }
     if (e.key === 'r' || e.key === 'R') { rotSteps = (rotSteps + 1) % 4; markDirty(); return; }
-
-    // Save
     if (e.key === 's' || e.key === 'S') { saveImage(); return; }
   }, { passive: false });
 }
@@ -218,7 +209,6 @@ function setupUI() {
 
   fileInput = createFileInput(handleFile);
   fileInput.parent(controlsRow);
-
   fileInput.elt.style.position = 'absolute';
   fileInput.elt.style.left = '-9999px';
   fileInput.elt.style.width = '1px';
@@ -297,10 +287,12 @@ function stepValue(dir) {
   if (!ready) return;
 
   if (mode === MODE_LENS) {
+    // Lens uses even divisions; big steps of 10 means ±20 divisions (still even)
     lensDivisions = Math.max(LENS_MIN, Math.min(LENS_MAX, lensDivisions + dir * 2));
     lensDivisions = normalizeLensDivisions(lensDivisions);
     markDirty();
   } else {
+    // Color: frames == columns, so ±10 really means ±10
     colorFrames = Math.max(COLOR_MIN, Math.min(COLOR_MAX, colorFrames + dir));
     colorFrameIndex = 0;
     lastFrameMs = 0;
