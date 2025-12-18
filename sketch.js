@@ -147,12 +147,20 @@ function setupUI() {
   styleControl(fileInput);
   fileInput.style('max-width', '180px');
 
+  // Stepper container for − / + (keeps them side by side)
+  const stepper = createDiv();
+  stepper.parent(controlsRow);
+  stepper.style('display', 'flex');
+  stepper.style('gap', '6px');
+  stepper.style('flex-wrap', 'nowrap');
+  stepper.style('align-items', 'center');
+
   minusBtn = createButton('−');
-  minusBtn.parent(controlsRow);
+  minusBtn.parent(stepper);
   styleControl(minusBtn);
 
   plusBtn = createButton('+');
-  plusBtn.parent(controlsRow);
+  plusBtn.parent(stepper);
   styleControl(plusBtn);
 
   bwBtn = createButton('B/W');
@@ -225,6 +233,11 @@ function styleControl(el) {
   el.style('cursor', 'pointer');
   el.style('pointer-events', 'auto');
 
+  // Helps mobile layout + keeps buttons readable
+  el.style('min-width', '36px');
+  el.style('text-align', 'center');
+
+  // iOS Safari tap behavior
   el.elt.style.touchAction = 'manipulation';
   el.elt.style.webkitTapHighlightColor = 'transparent';
   el.elt.style.userSelect = 'none';
