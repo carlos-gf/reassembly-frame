@@ -2,9 +2,20 @@ let srcImg = null;
 let srcSquare = null;
 let ready = false;
 
-let stripeCount = 20;
-let minStripes = 0;
-let maxStripes = 80;
+// Two modes
+const MODE_LENS = 'lens';
+const MODE_COLOR = 'color';
+let mode = MODE_LENS;
+
+// Parameters per mode
+let lensDivisions = 20;        // 0,2,4...
+let colorBands = 20;           // 1..N
+
+const LENS_MIN = 0;
+const LENS_MAX = 80;
+
+const COLOR_MIN = 1;
+const COLOR_MAX = 200;
 
 let toBW = false;
 let rotSteps = 3;
@@ -16,6 +27,9 @@ let fileInput;
 let bwBtn, rotBtn, saveBtn, minusBtn, plusBtn;
 let divLabel;
 
+let tabRow;
+let tabLensBtn, tabColorBtn;
+
 let cachedG = null;
 let dirty = true;
 
@@ -24,8 +38,6 @@ const MAX_WORKING_SIZE = 1400;
 function setup() {
   createCanvas(900, 900);
   pixelDensity(1);
-
-  // Prevent tile seams from smoothing artifacts
   noSmooth();
 
   setupPage();
@@ -109,7 +121,7 @@ function applyResponsiveLayout() {
     uiWrap.style('width', `${uiW}px`);
     uiWrap.style('max-width', `${uiW}px`);
   } else {
-    const uiH = isSmall ? 170 : 160;
+    const uiH = isSmall ? 190 : 180;
 
     availW = window.innerWidth - pad * 2;
     availH = window.innerHeight - pad * 2 - uiH - gap;
@@ -123,7 +135,7 @@ function applyResponsiveLayout() {
 
   canvasSide = Math.min(canvasSide, window.innerWidth - pad * 2);
 
-  // KEY FIX: force even canvas size to avoid seams at the center split
+  // Avoid seams at the 2×2 split
   if (canvasSide % 2 === 1) canvasSide -= 1;
 
   resizeCanvas(canvasSide, canvasSide);
@@ -143,6 +155,28 @@ function setupUI() {
   uiWrap.style('gap', '10px');
   uiWrap.style('align-items', 'center');
 
+  // Tabs row
+  tabRow = createDiv();
+  tabRow.parent(uiWrap);
+  tabRow.style('display', 'flex');
+  tabRow.style('gap', '8px');
+  tabRow.style('align-items', 'center');
+  tabRow.style('justify-content', 'center');
+  tabRow.style('flex-wrap', 'nowrap');
+
+  tabLensBtn = createButton('Lens');
+  tabLensBtn.parent(tabRow);
+  styleControl(tabLensBtn);
+
+  tabColorBtn = createButton('Color');
+  tabColorBtn.parent(tabRow);
+  styleControl(tabColorBtn);
+
+  tabLensBtn.mousePressed(() => setMode(MODE_LENS));
+  tabColorBtn.mousePressed(() => setMode(MODE_COLOR));
+  updateTabStyles();
+
+  // Controls row
   controlsRow = createDiv();
   controlsRow.parent(uiWrap);
   controlsRow.style('display', 'flex');
@@ -197,18 +231,12 @@ function setupUI() {
 
   minusBtn.mousePressed(() => {
     if (!ready) return;
-    stripeCount = Math.max(minStripes, stripeCount - 2);
-    stripeCount = normalizeStripeCount(stripeCount);
-    updateDivLabel();
-    markDirty();
+    stepDivisions(-1);
   });
 
   plusBtn.mousePressed(() => {
     if (!ready) return;
-    stripeCount = Math.min(maxStripes, stripeCount + 2);
-    stripeCount = normalizeStripeCount(stripeCount);
-    updateDivLabel();
-    markDirty();
+    stepDivisions(+1);
   });
 
   bwBtn.mousePressed(() => {
@@ -228,7 +256,7 @@ function setupUI() {
     ensureRendered();
     saveCanvas(
       cachedG,
-      `result_${stamp()}_div${stripeCount}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`,
+      `result_${stamp()}_${mode}_${getActiveValue()}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`,
       'png'
     );
   });
@@ -251,16 +279,58 @@ function styleControl(el) {
   el.elt.style.userSelect = 'none';
 }
 
+function setMode(newMode) {
+  mode = newMode;
+  updateTabStyles();
+  updateDivLabel();
+  markDirty();
+}
+
+function updateTabStyles() {
+  setTabStyle(tabLensBtn, mode === MODE_LENS);
+  setTabStyle(tabColorBtn, mode === MODE_COLOR);
+}
+
+function setTabStyle(btn, active) {
+  if (active) {
+    btn.style('background', '#000');
+    btn.style('color', '#fff');
+  } else {
+    btn.style('background', '#fff');
+    btn.style('color', '#000');
+  }
+}
+
+function getActiveValue() {
+  return mode === MODE_LENS ? lensDivisions : colorBands;
+}
+
+function stepDivisions(dir) {
+  if (mode === MODE_LENS) {
+    lensDivisions = Math.max(LENS_MIN, lensDivisions + dir * 2);
+    lensDivisions = normalizeLensDivisions(lensDivisions);
+  } else {
+    colorBands = Math.max(COLOR_MIN, Math.min(COLOR_MAX, colorBands + dir));
+  }
+  updateDivLabel();
+  markDirty();
+}
+
 function updateDivLabel() {
-  let label = `Divisions: ${stripeCount}`;
-  if (stripeCount === 0) label = 'Divisions: 0 (original)';
-  if (stripeCount === 2) label = 'Divisions: 2 (mirrored)';
-  if (stripeCount >= 4) label = `Divisions: ${stripeCount} (processed)`;
-  divLabel.html(label);
+  if (mode === MODE_LENS) {
+    const d = lensDivisions;
+    let label = `Divisions: ${d}`;
+    if (d === 0) label = 'Divisions: 0 (original)';
+    if (d === 2) label = 'Divisions: 2 (mirrored)';
+    if (d >= 4) label = `Divisions: ${d} (processed)`;
+    divLabel.html(label);
+  } else {
+    divLabel.html(`Bands: ${colorBands}`);
+  }
 }
 
 // Allow only 0 or even >= 2
-function normalizeStripeCount(n) {
+function normalizeLensDivisions(n) {
   if (n <= 0) return 0;
   if (n === 1) return 2;
   return Math.floor(n / 2) * 2;
@@ -269,37 +339,33 @@ function normalizeStripeCount(n) {
 /* ---------------- Keyboard controls ---------------- */
 
 function keyPressed() {
-  if (keyCode === RIGHT_ARROW) {
-    stripeCount = Math.min(maxStripes, stripeCount + 2);
-    stripeCount = normalizeStripeCount(stripeCount);
-    updateDivLabel();
-    markDirty();
-  }
-  if (keyCode === LEFT_ARROW) {
-    stripeCount = Math.max(minStripes, stripeCount - 2);
-    stripeCount = normalizeStripeCount(stripeCount);
-    updateDivLabel();
-    markDirty();
-  }
+  if (keyCode === RIGHT_ARROW) stepDivisions(+1);
+  if (keyCode === LEFT_ARROW) stepDivisions(-1);
+
   if (keyCode === UP_ARROW) {
-    stripeCount = Math.min(maxStripes, stripeCount + 10);
-    stripeCount = normalizeStripeCount(stripeCount);
+    if (!ready) return;
+    if (mode === MODE_LENS) lensDivisions = normalizeLensDivisions(Math.min(LENS_MAX, lensDivisions + 10));
+    else colorBands = Math.min(COLOR_MAX, colorBands + 10);
     updateDivLabel();
     markDirty();
   }
+
   if (keyCode === DOWN_ARROW) {
-    stripeCount = Math.max(minStripes, stripeCount - 10);
-    stripeCount = normalizeStripeCount(stripeCount);
+    if (!ready) return;
+    if (mode === MODE_LENS) lensDivisions = normalizeLensDivisions(Math.max(LENS_MIN, lensDivisions - 10));
+    else colorBands = Math.max(COLOR_MIN, colorBands - 10);
     updateDivLabel();
     markDirty();
   }
 
   if (key === 'b' || key === 'B') {
+    if (!ready) return;
     toBW = !toBW;
     markDirty();
   }
 
   if (key === 'r' || key === 'R') {
+    if (!ready) return;
     rotSteps = (rotSteps + 1) % 4;
     markDirty();
   }
@@ -309,10 +375,13 @@ function keyPressed() {
     ensureRendered();
     saveCanvas(
       cachedG,
-      `result_${stamp()}_div${stripeCount}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`,
+      `result_${stamp()}_${mode}_${getActiveValue()}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`,
       'png'
     );
   }
+
+  if (key === '1') setMode(MODE_LENS);
+  if (key === '2') setMode(MODE_COLOR);
 }
 
 /* ---------------- Placeholder ---------------- */
@@ -345,7 +414,8 @@ function handleFile(file) {
     srcSquare = sq;
 
     rotSteps = 3;
-    stripeCount = 20;
+    lensDivisions = 20;
+    colorBands = 20;
     toBW = false;
 
     ready = true;
@@ -372,6 +442,13 @@ function ensureRendered() {
 function runPipeline() {
   let oriented = rotateSquareBySteps(srcSquare, rotSteps);
   if (toBW) oriented = toGrayscale(oriented);
+
+  if (mode === MODE_COLOR) {
+    return renderColorAbstraction(oriented, colorBands);
+  }
+
+  // MODE_LENS
+  const stripeCount = lensDivisions;
 
   // 0 = show original cropped square
   if (stripeCount === 0) {
@@ -400,7 +477,6 @@ function runPipeline() {
   base.background(255);
   base.imageMode(CORNER);
 
-  // With even canvas size, these quadrants align perfectly
   base.image(tl, 0, 0);
   base.image(tr, qW, 0);
   base.image(bl, 0, qH);
@@ -413,6 +489,61 @@ function runPipeline() {
   const step1 = reorderVerticalStripes(base, stripeCount);
   const step2 = reorderHorizontalStripes(step1, stripeCount);
   return step2;
+}
+
+/* ---------------- Color abstraction ---------------- */
+
+// Renders the image as stacked horizontal bands.
+// Each band color = average color of that region (fast + stable on iPad).
+function renderColorAbstraction(img, bands) {
+  const g = createGraphics(width, height);
+  g.noSmooth();
+  g.background(255);
+
+  // Sample on a smaller copy for speed
+  const sampleSide = Math.min(420, img.width);
+  const sample = createImage(sampleSide, sampleSide);
+  sample.copy(img, 0, 0, img.width, img.height, 0, 0, sampleSide, sampleSide);
+  sample.loadPixels();
+
+  const bandH = height / bands;
+  g.noStroke();
+
+  for (let b = 0; b < bands; b++) {
+    const y0 = Math.floor((b * sampleSide) / bands);
+    const y1 = Math.floor(((b + 1) * sampleSide) / bands);
+    const yA = Math.max(0, y0);
+    const yB = Math.max(yA + 1, y1);
+
+    // Average color across the band
+    let r = 0, gg = 0, bb = 0, count = 0;
+
+    // Step through pixels (skip some for speed)
+    const xStep = 2;
+    const yStep = 1;
+
+    for (let y = yA; y < yB; y += yStep) {
+      for (let x = 0; x < sampleSide; x += xStep) {
+        const idx = 4 * (y * sampleSide + x);
+        r += sample.pixels[idx + 0];
+        gg += sample.pixels[idx + 1];
+        bb += sample.pixels[idx + 2];
+        count++;
+      }
+    }
+
+    if (count > 0) {
+      r /= count; gg /= count; bb /= count;
+    }
+
+    g.fill(r, gg, bb);
+
+    const yCanvas = b * bandH;
+    const hCanvas = (b === bands - 1) ? (height - yCanvas) : bandH;
+    g.rect(0, yCanvas, width, hCanvas);
+  }
+
+  return g;
 }
 
 /* ---------------- Utilities ---------------- */
@@ -465,8 +596,6 @@ function fitCenter(img, w, h) {
   g.noSmooth();
   g.background(255);
   g.imageMode(CENTER);
-
-  // integer center avoids subpixel sampling
   g.image(img, Math.floor(w / 2), Math.floor(h / 2), rw, rh);
   return g.get();
 }
