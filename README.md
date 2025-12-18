@@ -1,97 +1,89 @@
-# Reassembly Lens
+██████╗ ███████╗ █████╗ ███████╗███████╗███████╗███╗   ███╗██████╗ ██╗     ███████╗
+██╔══██╗██╔════╝██╔══██╗██╔════╝██╔════╝██╔════╝████╗ ████║██╔══██╗██║     ██╔════╝
+██████╔╝█████╗  ███████║███████╗███████╗█████╗  ██╔████╔██║██████╔╝██║     █████╗
+██╔══██╗██╔══╝  ██╔══██║╚════██║╚════██║██╔══╝  ██║╚██╔╝██║██╔══██╗██║     ██╔══╝
+██║  ██║███████╗██║  ██║███████║███████║███████╗██║ ╚═╝ ██║██████╔╝███████╗███████╗
+╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚═╝     ╚═╝╚═════╝ ╚══════╝╚══════╝
 
-┌──────────────────────────────┐
-│                              │
-│        REASSEMBLY LENS        │
-│                              │
-└──────────────────────────────┘
+Reassembly Lens
 
-Reassembly Lens is a small image experiment concerned with mirroring,
-fragmentation, and the slow loss of resolution.
+An experiment in reduction, symmetry, and temporal perception.
 
-An image is cropped, reflected, divided, and reassembled.
-With each step, structure remains, but certainty fades.
-The image is no longer read all at once, but encountered through repetition,
-edges, and alignment.
+This tool takes an image and subjects it to a simple operation:
+mirroring, slicing, and reordering.
+What emerges is not distortion, but a different way of seeing structure.
 
-The process draws from physical collage, optical devices, and simple
-reordering operations rather than filters or effects.
+The same image can be treated in two ways:
 
----
+Lens  
+A spatial operation.  
+The image is mirrored into four quadrants, then progressively reassembled through vertical and horizontal divisions.
+As divisions increase, the image collapses into a dense, optical surface.
 
-## Approach
+Color  
+A temporal operation.  
+The image is sampled into a square grid of colors.
+Each frame reveals one slice of the image’s chromatic structure.
+Over time, the full image is suggested rather than shown.
 
-The work operates through a limited set of gestures:
+Interaction
 
-- cropping to a square  
-- mirroring across axes  
-- slicing into bands  
-- reordering from the outside inward  
+Choose image  
+Load any image.  
+In Lens mode it is cropped to a square.  
+In Color mode the full image is used.
 
-These gestures are intentionally minimal.
-Their accumulation, rather than their complexity, produces change.
++ / −  
+Increase or decrease divisions (Lens)  
+Increase or decrease frames (Color)
 
-As the number of divisions increases, the image shifts from recognition
-toward abstraction, while traces of the original scene remain visible.
+B / W  
+Toggle grayscale
 
----
+Rotate  
+Rotate the image in 90° steps
 
-## States
+Save  
+Export the current state as an image
 
-The system moves through a small number of meaningful states.
+Keyboard controls
 
-**Original**  
-A single image, centered and intact.
+1 → Lens mode  
+2 → Color mode  
 
-**Mirrored**  
-The image folded into itself, forming a symmetrical field.
+← / → → small steps  
+↑ / ↓ → larger steps  
 
-**Reassembled**  
-The mirrored image segmented and reordered, producing a low-definition
-structure that suggests depth, motion, or optical interference.
+B → Black & White  
+R → Rotate  
+S → Save  
 
----
+Notes
 
-## Interaction
+This is not about reconstructing the original image.
+It is about revealing latent order through reduction.
 
-The interface allows the image to be explored rather than controlled.
-Buttons and keys adjust the degree of division, rotation, and tone.
-Each change re-renders the same underlying material.
+Each step removes information.
+What remains becomes more legible, not less.
 
-The work is designed to be used slowly.
-Small adjustments often produce disproportionate shifts in perception.
+Authorship & Use
 
----
+© 2025 Carlos García Fernández. All rights reserved.
 
-## Context
+This project, including its concept, visual logic, interaction design, and source code, is shared publicly for viewing and discussion.
 
-Reassembly Lens is informed by:
+Reuse, modification, redistribution, or incorporation into other works — including artworks, tools, or commercial projects — is **not permitted** without explicit permission from the author.
 
-- cut-and-reassemble photographic practices  
-- optical lenses and Fresnel structures  
-- repetition and symmetry as spatial cues  
-- reduced perceptual representations  
+If you are interested in referencing, exhibiting, or collaborating, please get in touch.
 
-It is not a tool for enhancement, but for observation.
+Status
 
----
+Ongoing experiment.  
+Built with p5.js.  
+Runs entirely in the browser.
 
-## Notes
-
-This project is intentionally minimal.
-Its value lies less in the outcome than in the process of transformation
-and the thresholds between states.
-
----
-
-## Rights and use
-
-© 2025 Carlos García Fernández
-
-This work is shared for viewing and reflection.
-
-The code, text, and visual outputs of Reassembly Lens may not be copied,
-modified, redistributed, or used commercially without explicit permission
-from the author.
-
-For inquiries or permissions, please get in touch.
+#reassembly  
+#opticalstructures  
+#reducedperceptualcues  
+#perceptualreduction  
+#computationalseeing
