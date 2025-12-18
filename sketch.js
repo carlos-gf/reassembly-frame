@@ -9,105 +9,30 @@ let maxStripes = 80;
 let toBW = false;
 let rotSteps = 3;
 
-let fileInput;
-let loadBtn, bwBtn, rotBtn, saveBtn, divMinusBtn, divPlusBtn;
+let ui;          // overlay container
+let fileInput;   // visible, reliable on iPad
+let bwBtn, rotBtn, saveBtn, minusBtn, plusBtn;
 
-// caching
 let cachedG = null;
 let dirty = true;
+
+// Controls memory. Bigger = sharper, but heavier.
+// 1024–1600 is a good range for iPad + browser stability.
+const MAX_WORKING_SIZE = 1400;
 
 function setup() {
   createCanvas(900, 900);
   pixelDensity(1);
-  textAlign(CENTER, CENTER);
 
-  // File input (hidden but used by the visible button)
-  fileInput = createFileInput(handleFile);
-  fileInput.position(0, 0);
-  fileInput.style('opacity', '0');
-  fileInput.style('width', '1px');
-  fileInput.style('height', '1px');
+  // Make sure canvas is behind UI
+  const c = document.querySelector('canvas');
+  c.style.position = 'relative';
+  c.style.zIndex = '0';
 
-  // Visible UI (works on iPad)
-  loadBtn = createButton('Load');
-  bwBtn = createButton('B/W');
-  rotBtn = createButton('Rotate');
-  saveBtn = createButton('Save');
-  divMinusBtn = createButton('−');
-  divPlusBtn = createButton('+');
-
-  // Simple styling
-  [loadBtn, bwBtn, rotBtn, saveBtn, divMinusBtn, divPlusBtn].forEach(b => {
-    b.style('font-size', '14px');
-    b.style('padding', '8px 10px');
-    b.style('border', '1px solid #000');
-    b.style('background', '#fff');
-    b.style('border-radius', '6px');
-  });
-
-  // Layout (top-right row)
-  layoutUI();
-
-  // Handlers
-  loadBtn.mousePressed(() => fileInput.elt.click());
-
-  bwBtn.mousePressed(() => {
-    toBW = !toBW;
-    markDirty();
-  });
-
-  rotBtn.mousePressed(() => {
-    rotSteps = (rotSteps + 1) % 4;
-    markDirty();
-  });
-
-  saveBtn.mousePressed(() => {
-    if (!ready) return;
-    ensureRendered();
-    saveCanvas(cachedG, `result_${stamp()}_div${stripeCount}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`, 'png');
-  });
-
-  divMinusBtn.mousePressed(() => {
-    stripeCount = Math.max(minStripes, stripeCount - 2);
-    if (stripeCount > 0) stripeCount = Math.floor(stripeCount / 2) * 2;
-    markDirty();
-  });
-
-  divPlusBtn.mousePressed(() => {
-    stripeCount = Math.min(maxStripes, stripeCount + 2);
-    if (stripeCount > 0) stripeCount = Math.floor(stripeCount / 2) * 2;
-    markDirty();
-  });
+  setupUI();
 
   cachedG = createGraphics(width, height);
-}
-
-function windowResized() {
-  // Optional: keep it fixed for now
-  // If you later want responsive, we’ll resize and markDirty()
-  layoutUI();
-}
-
-function layoutUI() {
-  const pad = 12;
-  const y = pad;
-
-  // Measure rough widths by positioning in a row from the right
-  // (p5 DOM buttons don’t expose width reliably before render, so we keep it simple)
-  const btnW = 70;
-  const smallW = 44;
-  const gap = 8;
-
-  // right-aligned row: [Load][B/W][Rotate][Save][−][+]
-  let x = window.innerWidth - pad;
-
-  divPlusBtn.position(x - smallW, y); x -= (smallW + gap);
-  divMinusBtn.position(x - smallW, y); x -= (smallW + gap);
-
-  saveBtn.position(x - btnW, y); x -= (btnW + gap);
-  rotBtn.position(x - btnW, y); x -= (btnW + gap);
-  bwBtn.position(x - btnW, y); x -= (btnW + gap);
-  loadBtn.position(x - btnW, y);
+  textAlign(CENTER, CENTER);
 }
 
 function draw() {
@@ -116,7 +41,7 @@ function draw() {
   if (!ready) {
     fill(20);
     textSize(16);
-    text("Load an image using the button in the top-right", width / 2, height / 2);
+    text("Use the controls in the top right to load an image", width / 2, height / 2);
     drawHUD();
     return;
   }
@@ -127,36 +52,122 @@ function draw() {
   drawHUD();
 }
 
-/* ---------- iPad tap handling ---------- */
-function touchStarted() {
-  // prevent page scroll / zoom gestures interfering
-  return false;
+/* ---------------- UI ---------------- */
+
+function setupUI() {
+  ui = createDiv();
+  ui.style('position', 'fixed');
+  ui.style('top', '12px');
+  ui.style('right', '12px');
+  ui.style('z-index', '9999');
+  ui.style('display', 'flex');
+  ui.style('gap', '8px');
+  ui.style('align-items', 'center');
+  ui.style('background', 'rgba(255,255,255,0.85)');
+  ui.style('padding', '8px 10px');
+  ui.style('border', '1px solid #000');
+  ui.style('border-radius', '10px');
+  ui.style('backdrop-filter', 'blur(6px)');
+
+  // Visible file input = most reliable on iPad Safari
+  fileInput = createFileInput(handleFile);
+  fileInput.parent(ui);
+  fileInput.attribute('accept', 'image/*');
+  styleControl(fileInput);
+  fileInput.style('max-width', '160px');
+
+  minusBtn = createButton('−');
+  minusBtn.parent(ui);
+  styleControl(minusBtn);
+
+  plusBtn = createButton('+');
+  plusBtn.parent(ui);
+  styleControl(plusBtn);
+
+  bwBtn = createButton('B/W');
+  bwBtn.parent(ui);
+  styleControl(bwBtn);
+
+  rotBtn = createButton('Rotate');
+  rotBtn.parent(ui);
+  styleControl(rotBtn);
+
+  saveBtn = createButton('Save');
+  saveBtn.parent(ui);
+  styleControl(saveBtn);
+
+  minusBtn.mousePressed(() => {
+    if (!ready) return;
+    stripeCount = Math.max(minStripes, stripeCount - 2);
+    if (stripeCount > 0) stripeCount = Math.floor(stripeCount / 2) * 2;
+    markDirty();
+  });
+
+  plusBtn.mousePressed(() => {
+    if (!ready) return;
+    stripeCount = Math.min(maxStripes, stripeCount + 2);
+    if (stripeCount > 0) stripeCount = Math.floor(stripeCount / 2) * 2;
+    markDirty();
+  });
+
+  bwBtn.mousePressed(() => {
+    if (!ready) return;
+    toBW = !toBW;
+    markDirty();
+  });
+
+  rotBtn.mousePressed(() => {
+    if (!ready) return;
+    rotSteps = (rotSteps + 1) % 4;
+    markDirty();
+  });
+
+  saveBtn.mousePressed(() => {
+    if (!ready) return;
+    ensureRendered();
+    saveCanvas(cachedG, `result_${stamp()}_div${stripeCount}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`, 'png');
+  });
 }
 
-/* ---------- keyboard (optional) ---------- */
-function keyPressed() {
-  if (key === 'b' || key === 'B') { toBW = !toBW; markDirty(); }
-  if (key === 'r' || key === 'R') { rotSteps = (rotSteps + 1) % 4; markDirty(); }
-  if (key === 'l' || key === 'L') { fileInput.elt.click(); }
-
-  if (keyCode === RIGHT_ARROW) { stripeCount = Math.min(maxStripes, stripeCount + 2); markDirty(); }
-  if (keyCode === LEFT_ARROW)  { stripeCount = Math.max(minStripes, stripeCount - 2); markDirty(); }
-
-  if (stripeCount > 0) stripeCount = Math.floor(stripeCount / 2) * 2;
+function styleControl(el) {
+  el.style('font-size', '14px');
+  el.style('padding', '8px 10px');
+  el.style('border', '1px solid #000');
+  el.style('background', '#fff');
+  el.style('border-radius', '8px');
+  el.style('cursor', 'pointer');
+  el.style('pointer-events', 'auto');
 }
+
+/* ---------------- Memory safe image load ---------------- */
 
 function handleFile(file) {
   if (!file || file.type !== 'image') return;
 
   loadImage(file.data, img => {
     srcImg = img;
-    srcSquare = cropCenterSquare(srcImg);
+
+    // Crop to centered square
+    let sq = cropCenterSquare(srcImg);
+
+    // Downscale to reduce memory + avoid browser reloads
+    if (sq.width > MAX_WORKING_SIZE) {
+      sq.resize(MAX_WORKING_SIZE, MAX_WORKING_SIZE);
+    }
+
+    srcSquare = sq;
+
+    // Reset state
     rotSteps = 3;
     stripeCount = 20;
+    toBW = false;
+
     ready = true;
     markDirty();
   });
 }
+
+/* ---------------- Render caching ---------------- */
 
 function markDirty() {
   dirty = true;
@@ -164,11 +175,11 @@ function markDirty() {
 
 function ensureRendered() {
   if (!dirty) return;
-  cachedG = runPipeline();
+  cachedG = runPipeline(); // only re-render on changes
   dirty = false;
 }
 
-/* ---------- pipeline (renders once per change) ---------- */
+/* ---------------- Pipeline ---------------- */
 
 function runPipeline() {
   const qW = Math.floor(width / 2);
@@ -197,7 +208,7 @@ function runPipeline() {
   return step2;
 }
 
-/* ---------- saving helpers ---------- */
+/* ---------------- Helpers ---------------- */
 
 function stamp() {
   const d = new Date();
@@ -212,67 +223,10 @@ function stamp() {
   );
 }
 
-/* ---------- stripe logic ---------- */
-
-function alternatingEndsOrder(n) {
-  const order = [];
-  let left = 0, right = n - 1;
-  while (left <= right) {
-    if (left <= right) order.push(left++);
-    if (left <= right) order.push(right--);
-  }
-  return order;
-}
-
-function reorderVerticalStripes(srcG, nStripes) {
-  const w = srcG.width, h = srcG.height;
-
-  const stripeW = Math.max(1, Math.floor(w / nStripes));
-  const count = Math.ceil(w / stripeW);
-  const order = alternatingEndsOrder(count);
-
-  const out = createGraphics(w, h);
-  out.background(255);
-
-  let dstX = 0;
-  for (let i = 0; i < count; i++) {
-    const srcX = order[i] * stripeW;
-    const sw = Math.min(stripeW, w - srcX);
-    out.copy(srcG, srcX, 0, sw, h, dstX, 0, sw, h);
-    dstX += sw;
-    if (dstX >= w) break;
-  }
-  return out;
-}
-
-function reorderHorizontalStripes(srcG, nStripes) {
-  const w = srcG.width, h = srcG.height;
-
-  const stripeH = Math.max(1, Math.floor(h / nStripes));
-  const count = Math.ceil(h / stripeH);
-  const order = alternatingEndsOrder(count);
-
-  const out = createGraphics(w, h);
-  out.background(255);
-
-  let dstY = 0;
-  for (let i = 0; i < count; i++) {
-    const srcY = order[i] * stripeH;
-    const sh = Math.min(stripeH, h - srcY);
-    out.copy(srcG, 0, srcY, w, sh, 0, dstY, w, sh);
-    dstY += sh;
-    if (dstY >= h) break;
-  }
-  return out;
-}
-
-/* ---------- image helpers ---------- */
-
 function cropCenterSquare(img) {
   const side = Math.min(img.width, img.height);
   const x = Math.floor((img.width - side) / 2);
   const y = Math.floor((img.height - side) / 2);
-
   const out = createImage(side, side);
   out.copy(img, x, y, side, side, 0, 0, side, side);
   return out;
@@ -281,7 +235,6 @@ function cropCenterSquare(img) {
 function rotateSquareBySteps(img, steps) {
   steps = ((steps % 4) + 4) % 4;
   if (steps === 0) return img;
-
   const side = img.width;
   const g = createGraphics(side, side);
   g.background(255);
@@ -298,7 +251,6 @@ function fitCenter(img, w, h) {
   const s = Math.min(w / img.width, h / img.height);
   const rw = Math.round(img.width * s);
   const rh = Math.round(img.height * s);
-
   const g = createGraphics(w, h);
   g.background(255);
   g.imageMode(CENTER);
@@ -333,7 +285,51 @@ function mirrorVertical(img) {
   return g.get();
 }
 
-/* ---------- HUD ---------- */
+function alternatingEndsOrder(n) {
+  const order = [];
+  let left = 0, right = n - 1;
+  while (left <= right) {
+    if (left <= right) order.push(left++);
+    if (left <= right) order.push(right--);
+  }
+  return order;
+}
+
+function reorderVerticalStripes(srcG, nStripes) {
+  const w = srcG.width, h = srcG.height;
+  const stripeW = Math.max(1, Math.floor(w / nStripes));
+  const count = Math.ceil(w / stripeW);
+  const order = alternatingEndsOrder(count);
+  const out = createGraphics(w, h);
+  out.background(255);
+  let dstX = 0;
+  for (let i = 0; i < count; i++) {
+    const srcX = order[i] * stripeW;
+    const sw = Math.min(stripeW, w - srcX);
+    out.copy(srcG, srcX, 0, sw, h, dstX, 0, sw, h);
+    dstX += sw;
+    if (dstX >= w) break;
+  }
+  return out;
+}
+
+function reorderHorizontalStripes(srcG, nStripes) {
+  const w = srcG.width, h = srcG.height;
+  const stripeH = Math.max(1, Math.floor(h / nStripes));
+  const count = Math.ceil(h / stripeH);
+  const order = alternatingEndsOrder(count);
+  const out = createGraphics(w, h);
+  out.background(255);
+  let dstY = 0;
+  for (let i = 0; i < count; i++) {
+    const srcY = order[i] * stripeH;
+    const sh = Math.min(stripeH, h - srcY);
+    out.copy(srcG, 0, srcY, w, sh, 0, dstY, w, sh);
+    dstY += sh;
+    if (dstY >= h) break;
+  }
+  return out;
+}
 
 function drawHUD() {
   push();
@@ -341,9 +337,7 @@ function drawHUD() {
   noStroke();
   textAlign(LEFT, TOP);
   textSize(12);
-
   const bw = toBW ? "ON" : "OFF";
-  const hud = `Div: ${stripeCount}  |  B/W: ${bw}  |  Rot: ${rotSteps * 90}°`;
-  text(hud, 12, height - 22);
+  text(`Div: ${stripeCount} | B/W: ${bw} | Rot: ${rotSteps * 90}°`, 12, height - 22);
   pop();
 }
