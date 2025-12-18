@@ -257,7 +257,7 @@ function updateLabel() {
     else if (lensDivisions === 2) divLabel.html('Divisions: 2 (mirrored)');
     else divLabel.html(`Divisions: ${lensDivisions}`);
   } else {
-    divLabel.html(`Frames: ${colorFrames}`);
+    divLabel.html(`Frames: ${colorFrames} × ${colorFrames}`);
   }
 }
 
@@ -322,7 +322,10 @@ function updateColorAnimation() {
 
 function renderColorAnimatedFrame() {
   let img = applyUserTransforms(srcImgFull);
-  const bands = buildColorBands(img, colorFrames);
+
+  // frames == columns (square sampling grid)
+  const gridN = Math.max(COLOR_MIN, Math.min(COLOR_MAX, colorFrames));
+  const bands = buildColorBands(img, gridN); // returns gridN frames each with gridN columns
   const colors = bands[colorFrameIndex];
 
   const g = createGraphics(width, height);
@@ -486,11 +489,18 @@ function reorderHorizontalStripes(src, n) {
   return g;
 }
 
-function buildColorBands(img, frames) {
-  const cols = max(40, min(220, floor(img.width / 6)));
-  const out = [];
+/*
+  Color bands:
+  frames = N, columns = N
+  returns: Array(N) of Array(N) RGB triplets
+*/
+function buildColorBands(img, n) {
+  const frames = n;
+  const cols = n; // <-- THE FIX: columns match frames
 
+  const out = [];
   img.loadPixels();
+
   for (let b = 0; b < frames; b++) {
     const y0 = floor(b * img.height / frames);
     const y1 = max(y0 + 1, floor((b + 1) * img.height / frames));
@@ -499,10 +509,15 @@ function buildColorBands(img, frames) {
     for (let c = 0; c < cols; c++) {
       const x0 = floor(c * img.width / cols);
       const x1 = max(x0 + 1, floor((c + 1) * img.width / cols));
+
       let r = 0, g = 0, bl = 0, cnt = 0;
 
-      for (let y = y0; y < y1; y += 2) {
-        for (let x = x0; x < x1; x += 2) {
+      // Light subsampling for mobile friendliness
+      const xStep = max(1, floor((x1 - x0) / 3));
+      const yStep = max(1, floor((y1 - y0) / 3));
+
+      for (let y = y0; y < y1; y += yStep) {
+        for (let x = x0; x < x1; x += xStep) {
           const i = 4 * (y * img.width + x);
           r += img.pixels[i];
           g += img.pixels[i + 1];
@@ -510,10 +525,13 @@ function buildColorBands(img, frames) {
           cnt++;
         }
       }
+
       row.push(cnt ? [r / cnt, g / cnt, bl / cnt] : [0, 0, 0]);
     }
+
     out.push(row);
   }
+
   return out;
 }
 
@@ -530,6 +548,13 @@ function markDirty() {
 
 function saveImage() {
   if (!ready) return;
-  if (mode === MODE_LENS) ensureRendered();
-  saveCanvas(mode === MODE_LENS ? cachedG : 'reassembly_color', 'png');
+
+  if (mode === MODE_LENS) {
+    ensureRendered();
+    saveCanvas(cachedG, 'reassembly_lens', 'png');
+  } else {
+    // Save the currently displayed color frame
+    const g = renderColorAnimatedFrame();
+    saveCanvas(g, 'reassembly_color', 'png');
+  }
 }
