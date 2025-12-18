@@ -1,16 +1,14 @@
-let srcImg = null;
-let srcSquare = null;       // cropped square (original orientation)
-let srcSquareProc = null;   // cropped square, rotated 90° CW (used for stripe processing)
+let srcSquare = null;
 let ready = false;
 
-// Two modes
+// Modes
 const MODE_LENS = 'lens';
 const MODE_COLOR = 'color';
 let mode = MODE_LENS;
 
-// Parameters per mode
-let lensDivisions = 20;        // 0,2,4...
-let colorBands = 20;           // 1..N
+// Parameters
+let lensDivisions = 20; // 0,2,4...
+let colorBands = 20;
 
 const LENS_MIN = 0;
 const LENS_MAX = 80;
@@ -18,22 +16,19 @@ const COLOR_MIN = 1;
 const COLOR_MAX = 200;
 
 let toBW = false;
-let rotSteps = 0;              // user rotation (0,90,180,270)
+let rotSteps = 0; // user rotation only (0–3)
 
-let container;
-let uiWrap;
-let controlsRow;
-let fileInput;
-let bwBtn, rotBtn, saveBtn, minusBtn, plusBtn;
+let container, uiWrap, controlsRow;
+let fileInput, bwBtn, rotBtn, saveBtn, minusBtn, plusBtn;
 let divLabel;
-
-let tabRow;
-let tabLensBtn, tabColorBtn;
+let tabRow, tabLensBtn, tabColorBtn;
 
 let cachedG = null;
 let dirty = true;
 
 const MAX_WORKING_SIZE = 1400;
+
+/* ---------------- Setup ---------------- */
 
 function setup() {
   createCanvas(900, 900);
@@ -43,22 +38,19 @@ function setup() {
   setupPage();
   setupContainer();
   setupUI();
-
   applyResponsiveLayout();
+
   cachedG = createGraphics(width, height);
   cachedG.noSmooth();
 
   const c = document.querySelector('canvas');
   c.style.touchAction = 'none';
-  c.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
-  c.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
   textAlign(CENTER, CENTER);
 }
 
 function draw() {
   if (!ready) {
-    background(240);
     drawPlaceholder();
     return;
   }
@@ -90,8 +82,7 @@ function setupContainer() {
   container.style('align-items', 'center');
   container.style('gap', '14px');
 
-  const c = document.querySelector('canvas');
-  container.elt.appendChild(c);
+  container.elt.appendChild(document.querySelector('canvas'));
 }
 
 function applyResponsiveLayout() {
@@ -181,9 +172,11 @@ function setupUI() {
   bwBtn = createButton('B/W');
   rotBtn = createButton('Rotate');
   saveBtn = createButton('Save');
+
   bwBtn.parent(controlsRow);
   rotBtn.parent(controlsRow);
   saveBtn.parent(controlsRow);
+
   styleControl(bwBtn);
   styleControl(rotBtn);
   styleControl(saveBtn);
@@ -209,6 +202,8 @@ function styleControl(el) {
   el.style('cursor', 'pointer');
   el.elt.style.touchAction = 'manipulation';
 }
+
+/* ---------------- Mode / Params ---------------- */
 
 function setMode(m) {
   mode = m;
@@ -258,13 +253,9 @@ function handleFile(file) {
   if (!file || file.type !== 'image') return;
 
   loadImage(file.data, img => {
-    let sq = cropCenterSquare(img);
-    if (sq.width > MAX_WORKING_SIZE) sq.resize(MAX_WORKING_SIZE, MAX_WORKING_SIZE);
-    srcSquare = sq;
-
-    // IMPORTANT FIX:
-    // Pre-rotate 90° CLOCKWISE (negative HALF_PI)
-    srcSquareProc = rotateCW90(srcSquare);
+    srcSquare = cropCenterSquare(img);
+    if (srcSquare.width > MAX_WORKING_SIZE)
+      srcSquare.resize(MAX_WORKING_SIZE, MAX_WORKING_SIZE);
 
     lensDivisions = 20;
     colorBands = 20;
@@ -286,13 +277,10 @@ function ensureRendered() {
 }
 
 function runPipeline() {
-  let base = srcSquare;
+  let img = srcSquare;
 
-  if (mode === MODE_LENS && lensDivisions >= 4) {
-    base = srcSquareProc;
-  }
-
-  let img = rotateSquareBySteps(base, rotSteps);
+  // SINGLE rotation point (user only)
+  if (rotSteps !== 0) img = rotateSquareBySteps(img, rotSteps);
   if (toBW) img = toGrayscale(img);
 
   if (mode === MODE_COLOR) return renderColorAbstraction(img, colorBands);
@@ -333,19 +321,7 @@ function renderMirrored(img) {
 
 /* ---------------- Utilities ---------------- */
 
-function rotateCW90(img) {
-  const side = img.width;
-  const g = createGraphics(side, side);
-  g.noSmooth();
-  g.translate(side / 2, side / 2);
-  g.rotate(-HALF_PI); // CORRECT clockwise rotation
-  g.imageMode(CENTER);
-  g.image(img, 0, 0);
-  return g.get();
-}
-
 function rotateSquareBySteps(img, steps) {
-  if (steps === 0) return img;
   const side = img.width;
   const g = createGraphics(side, side);
   g.noSmooth();
@@ -353,7 +329,7 @@ function rotateSquareBySteps(img, steps) {
   g.rotate(HALF_PI * steps);
   g.imageMode(CENTER);
   g.image(img, 0, 0);
-  return g.get();
+  return g;
 }
 
 function cropCenterSquare(img) {
