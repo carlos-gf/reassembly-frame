@@ -9,7 +9,9 @@ let maxStripes = 80;
 let toBW = false;
 let rotSteps = 3;
 
-let ui;
+let container;      // wraps canvas + UI
+let uiWrap;         // UI panel
+let controlsRow;    // buttons row
 let fileInput;
 let bwBtn, rotBtn, saveBtn, minusBtn, plusBtn;
 let divLabel;
@@ -20,118 +22,145 @@ let dirty = true;
 const MAX_WORKING_SIZE = 1400;
 
 function setup() {
-  // Start with a reasonable canvas, then resize to fit viewport
   createCanvas(900, 900);
   pixelDensity(1);
 
-  const c = document.querySelector('canvas');
-  c.style.display = 'block';
-  c.style.margin = '0 auto';
-  c.style.position = 'relative';
-  c.style.zIndex = '0';
-
+  setupPage();
+  setupContainer();
   setupUI();
-  applyCenteredLayout();
 
+  applyResponsiveLayout();
   cachedG = createGraphics(width, height);
+
   textAlign(CENTER, CENTER);
 }
 
 function draw() {
-  background(255);
-
   if (!ready) {
-    fill(20);
-    textSize(16);
-    text("Load an image to begin", width / 2, height / 2);
+    background(240);
+    drawPlaceholder();
     return;
   }
 
+  background(255);
   ensureRendered();
   image(cachedG, 0, 0);
-
-  // No HUD text inside canvas anymore (label lives under image in UI)
 }
 
 function windowResized() {
-  applyCenteredLayout();
+  applyResponsiveLayout();
   markDirty();
 }
 
-function applyCenteredLayout() {
-  // Compute a centered square canvas that fits the viewport above UI
-  // We'll reserve space for UI bar under the canvas.
-  const pad = 24;
-  const uiHeight = 80; // approximate height of UI area
-  const availW = window.innerWidth - pad * 2;
-  const availH = window.innerHeight - pad * 2 - uiHeight;
+/* ---------------- Page + layout ---------------- */
 
-  const side = Math.max(320, Math.floor(Math.min(availW, availH)));
-
-  resizeCanvas(side, side);
-  cachedG = createGraphics(width, height);
-
-  // Center the whole UI block + canvas in the page
+function setupPage() {
   document.body.style.margin = '0';
   document.body.style.background = '#fff';
   document.body.style.height = '100vh';
   document.body.style.display = 'flex';
   document.body.style.alignItems = 'center';
   document.body.style.justifyContent = 'center';
-
-  // Wrap canvas + UI in a centered column
-  // p5 doesn’t create a wrapper automatically, so we position UI relative to viewport and center it
-  ui.style('width', `${side}px`);
 }
 
+function setupContainer() {
+  container = createDiv();
+  container.parent(document.body);
+  container.style('display', 'flex');
+  container.style('align-items', 'center');
+  container.style('justify-content', 'center');
+  container.style('gap', '14px');
+
+  // Move canvas into container
+  const c = document.querySelector('canvas');
+  container.elt.appendChild(c);
+  c.style.display = 'block';
+  c.style.margin = '0';
+}
+
+function applyResponsiveLayout() {
+  const pad = 24;
+  const isHorizontal = window.innerWidth >= window.innerHeight;
+
+  // Reserve UI space depending on orientation
+  let availW, availH, canvasSide;
+
+  if (isHorizontal) {
+    // UI to the right
+    const uiW = 240; // fixed-ish panel width
+    availW = window.innerWidth - pad * 2 - uiW - 14;
+    availH = window.innerHeight - pad * 2;
+    canvasSide = Math.max(320, Math.floor(Math.min(availW, availH)));
+
+    container.style('flex-direction', 'row');
+    uiWrap.style('width', `${uiW}px`);
+    uiWrap.style('max-width', `${uiW}px`);
+  } else {
+    // UI under
+    const uiH = 150; // reserved height under canvas
+    availW = window.innerWidth - pad * 2;
+    availH = window.innerHeight - pad * 2 - uiH - 14;
+    canvasSide = Math.max(320, Math.floor(Math.min(availW, availH)));
+
+    container.style('flex-direction', 'column');
+    uiWrap.style('width', `${canvasSide}px`);
+    uiWrap.style('max-width', `${canvasSide}px`);
+  }
+
+  resizeCanvas(canvasSide, canvasSide);
+  cachedG = createGraphics(width, height);
+
+  // keep UI elements aligned nicely
+  uiWrap.style('box-sizing', 'border-box');
+}
+
+/* ---------------- UI ---------------- */
+
 function setupUI() {
-  ui = createDiv();
-  ui.style('display', 'flex');
-  ui.style('flex-direction', 'column');
-  ui.style('align-items', 'center');
-  ui.style('gap', '10px');
+  uiWrap = createDiv();
+  uiWrap.parent(container);
+  uiWrap.style('display', 'flex');
+  uiWrap.style('flex-direction', 'column');
+  uiWrap.style('gap', '10px');
+  uiWrap.style('align-items', 'center');
 
-  // Attach to body (we will center body via flex in applyCenteredLayout)
-  ui.parent(document.body);
+  controlsRow = createDiv();
+  controlsRow.parent(uiWrap);
+  controlsRow.style('display', 'flex');
+  controlsRow.style('gap', '8px');
+  controlsRow.style('align-items', 'center');
+  controlsRow.style('justify-content', 'center');
+  controlsRow.style('flex-wrap', 'wrap');
 
-  // Controls row
-  const row = createDiv();
-  row.parent(ui);
-  row.style('display', 'flex');
-  row.style('gap', '8px');
-  row.style('align-items', 'center');
-  row.style('justify-content', 'center');
-  row.style('flex-wrap', 'wrap');
-
+  // Visible file input is most reliable on iPad
   fileInput = createFileInput(handleFile);
-  fileInput.parent(row);
+  fileInput.parent(controlsRow);
   fileInput.attribute('accept', 'image/*');
   styleControl(fileInput);
   fileInput.style('max-width', '180px');
 
   minusBtn = createButton('−');
-  minusBtn.parent(row);
+  minusBtn.parent(controlsRow);
   styleControl(minusBtn);
 
   plusBtn = createButton('+');
-  plusBtn.parent(row);
+  plusBtn.parent(controlsRow);
   styleControl(plusBtn);
 
   bwBtn = createButton('B/W');
-  bwBtn.parent(row);
+  bwBtn.parent(controlsRow);
   styleControl(bwBtn);
 
   rotBtn = createButton('Rotate');
-  rotBtn.parent(row);
+  rotBtn.parent(controlsRow);
   styleControl(rotBtn);
 
   saveBtn = createButton('Save');
-  saveBtn.parent(row);
+  saveBtn.parent(controlsRow);
   styleControl(saveBtn);
 
-  // Division label centered under the image
   divLabel = createDiv('');
-  divLabel.parent(ui);
+  divLabel.parent(uiWrap);
   divLabel.style('font-family', 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif');
   divLabel.style('font-size', '13px');
   divLabel.style('color', '#000');
@@ -179,25 +208,94 @@ function setupUI() {
   });
 }
 
-function updateDivLabel() {
-  const label = stripeCount <= 1 ? 'Divisions: 0 (mirrored only)' : `Divisions: ${stripeCount}`;
-  divLabel.html(label);
-}
-
 function styleControl(el) {
   el.style('font-size', '14px');
   el.style('padding', '8px 10px');
   el.style('border', '1px solid #000');
   el.style('background', '#fff');
-  el.style('border-radius', '10px');
+  el.style('border-radius', '0px'); // pointy corners
   el.style('cursor', 'pointer');
   el.style('pointer-events', 'auto');
 }
 
-function normalizeStripeCount(n) {
-  if (n <= 1) return n;
-  return Math.floor(n / 2) * 2;
+function updateDivLabel() {
+  const label = stripeCount <= 1 ? 'Divisions: 0 (mirrored only)' : `Divisions: ${stripeCount}`;
+  divLabel.html(label);
 }
+
+function normalizeStripeCount(n) {
+  if (n <= 1) return n;      // allow 0 or 1 as "no division"
+  return Math.floor(n / 2) * 2; // force even
+}
+
+/* ---------------- Keyboard controls (kept) ---------------- */
+
+function keyPressed() {
+  // divisions
+  if (keyCode === RIGHT_ARROW) {
+    stripeCount = Math.min(maxStripes, stripeCount + 2);
+    stripeCount = normalizeStripeCount(stripeCount);
+    updateDivLabel();
+    markDirty();
+  }
+  if (keyCode === LEFT_ARROW) {
+    stripeCount = Math.max(minStripes, stripeCount - 2);
+    stripeCount = normalizeStripeCount(stripeCount);
+    updateDivLabel();
+    markDirty();
+  }
+  if (keyCode === UP_ARROW) {
+    stripeCount = Math.min(maxStripes, stripeCount + 10);
+    stripeCount = normalizeStripeCount(stripeCount);
+    updateDivLabel();
+    markDirty();
+  }
+  if (keyCode === DOWN_ARROW) {
+    stripeCount = Math.max(minStripes, stripeCount - 10);
+    stripeCount = normalizeStripeCount(stripeCount);
+    updateDivLabel();
+    markDirty();
+  }
+
+  if (key === 'b' || key === 'B') {
+    toBW = !toBW;
+    markDirty();
+  }
+
+  if (key === 'r' || key === 'R') {
+    rotSteps = (rotSteps + 1) % 4;
+    markDirty();
+  }
+
+  if (key === 's' || key === 'S') {
+    if (!ready) return;
+    ensureRendered();
+    saveCanvas(
+      cachedG,
+      `result_${stamp()}_div${stripeCount}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`,
+      'png'
+    );
+  }
+}
+
+/* ---------------- Placeholder ---------------- */
+
+function drawPlaceholder() {
+  noStroke();
+  fill(220);
+  rect(0, 0, width, height);
+
+  fill(120);
+  textSize(16);
+  text("Choose an image using the file input", width / 2, height / 2);
+
+  // thin border
+  noFill();
+  stroke(200);
+  rect(0.5, 0.5, width - 1, height - 1);
+}
+
+/* ---------------- Image loading ---------------- */
 
 function handleFile(file) {
   if (!file || file.type !== 'image') return;
@@ -221,6 +319,8 @@ function handleFile(file) {
   });
 }
 
+/* ---------------- Rendering cache ---------------- */
+
 function markDirty() {
   dirty = true;
 }
@@ -230,6 +330,8 @@ function ensureRendered() {
   cachedG = runPipeline();
   dirty = false;
 }
+
+/* ---------------- Pipeline ---------------- */
 
 function runPipeline() {
   const qW = Math.floor(width / 2);
@@ -257,6 +359,8 @@ function runPipeline() {
   const step2 = reorderHorizontalStripes(step1, stripeCount);
   return step2;
 }
+
+/* ---------------- Utilities ---------------- */
 
 function stamp() {
   const d = new Date();
