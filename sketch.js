@@ -25,12 +25,16 @@ function setup() {
   createCanvas(900, 900);
   pixelDensity(1);
 
+  // Prevent tile seams from smoothing artifacts
+  noSmooth();
+
   setupPage();
   setupContainer();
   setupUI();
 
   applyResponsiveLayout();
   cachedG = createGraphics(width, height);
+  cachedG.noSmooth();
 
   // Prevent iOS pinch/scroll on the canvas only (do NOT block UI taps)
   const c = document.querySelector('canvas');
@@ -119,8 +123,14 @@ function applyResponsiveLayout() {
 
   canvasSide = Math.min(canvasSide, window.innerWidth - pad * 2);
 
+  // KEY FIX: force even canvas size to avoid seams at the center split
+  if (canvasSide % 2 === 1) canvasSide -= 1;
+
   resizeCanvas(canvasSide, canvasSide);
+  noSmooth();
+
   cachedG = createGraphics(width, height);
+  cachedG.noSmooth();
 }
 
 /* ---------------- UI ---------------- */
@@ -233,11 +243,9 @@ function styleControl(el) {
   el.style('cursor', 'pointer');
   el.style('pointer-events', 'auto');
 
-  // Helps mobile layout + keeps buttons readable
   el.style('min-width', '36px');
   el.style('text-align', 'center');
 
-  // iOS Safari tap behavior
   el.elt.style.touchAction = 'manipulation';
   el.elt.style.webkitTapHighlightColor = 'transparent';
   el.elt.style.userSelect = 'none';
@@ -355,6 +363,7 @@ function markDirty() {
 function ensureRendered() {
   if (!dirty) return;
   cachedG = runPipeline();
+  cachedG.noSmooth();
   dirty = false;
 }
 
@@ -367,10 +376,11 @@ function runPipeline() {
   // 0 = show original cropped square
   if (stripeCount === 0) {
     const g = createGraphics(width, height);
+    g.noSmooth();
     g.background(255);
     g.imageMode(CENTER);
     const s = Math.min(width / oriented.width, height / oriented.height);
-    g.image(oriented, width / 2, height / 2, oriented.width * s, oriented.height * s);
+    g.image(oriented, Math.floor(width / 2), Math.floor(height / 2), oriented.width * s, oriented.height * s);
     return g;
   }
 
@@ -386,7 +396,11 @@ function runPipeline() {
   const br = mirrorVertical(tr);
 
   const base = createGraphics(width, height);
+  base.noSmooth();
   base.background(255);
+  base.imageMode(CORNER);
+
+  // With even canvas size, these quadrants align perfectly
   base.image(tl, 0, 0);
   base.image(tr, qW, 0);
   base.image(bl, 0, qH);
@@ -431,6 +445,7 @@ function rotateSquareBySteps(img, steps) {
 
   const side = img.width;
   const g = createGraphics(side, side);
+  g.noSmooth();
   g.background(255);
   g.push();
   g.translate(side / 2, side / 2);
@@ -445,15 +460,20 @@ function fitCenter(img, w, h) {
   const s = Math.min(w / img.width, h / img.height);
   const rw = Math.round(img.width * s);
   const rh = Math.round(img.height * s);
+
   const g = createGraphics(w, h);
+  g.noSmooth();
   g.background(255);
   g.imageMode(CENTER);
-  g.image(img, w / 2, h / 2, rw, rh);
+
+  // integer center avoids subpixel sampling
+  g.image(img, Math.floor(w / 2), Math.floor(h / 2), rw, rh);
   return g.get();
 }
 
 function toGrayscale(img) {
   const g = createGraphics(img.width, img.height);
+  g.noSmooth();
   g.image(img, 0, 0);
   g.filter(GRAY);
   return g.get();
@@ -461,6 +481,7 @@ function toGrayscale(img) {
 
 function mirrorHorizontal(img) {
   const g = createGraphics(img.width, img.height);
+  g.noSmooth();
   g.push();
   g.translate(img.width, 0);
   g.scale(-1, 1);
@@ -471,6 +492,7 @@ function mirrorHorizontal(img) {
 
 function mirrorVertical(img) {
   const g = createGraphics(img.width, img.height);
+  g.noSmooth();
   g.push();
   g.translate(0, img.height);
   g.scale(1, -1);
@@ -492,6 +514,7 @@ function alternatingEndsOrder(n) {
 function reorderVerticalStripes(srcG, nStripes) {
   const w = srcG.width, h = srcG.height;
   const out = createGraphics(w, h);
+  out.noSmooth();
   out.background(255);
 
   const order = alternatingEndsOrder(nStripes);
@@ -512,6 +535,7 @@ function reorderVerticalStripes(srcG, nStripes) {
 function reorderHorizontalStripes(srcG, nStripes) {
   const w = srcG.width, h = srcG.height;
   const out = createGraphics(w, h);
+  out.noSmooth();
   out.background(255);
 
   const order = alternatingEndsOrder(nStripes);
