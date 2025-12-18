@@ -111,6 +111,8 @@ function applyResponsiveLayout() {
   }
 
   canvasSide = Math.max(180, Math.floor(canvasSide));
+
+  // avoid seams on 2x2 split
   if (canvasSide % 2 === 1) canvasSide -= 1;
 
   resizeCanvas(canvasSide, canvasSide);
@@ -187,8 +189,8 @@ function setupUI() {
 
   minusBtn.mousePressed(() => stepDivisions(-1));
   plusBtn.mousePressed(() => stepDivisions(+1));
-  bwBtn.mousePressed(() => { toBW = !toBW; markDirty(); });
-  rotBtn.mousePressed(() => { rotSteps = (rotSteps + 1) % 4; markDirty(); });
+  bwBtn.mousePressed(() => { if (!ready) return; toBW = !toBW; markDirty(); });
+  rotBtn.mousePressed(() => { if (!ready) return; rotSteps = (rotSteps + 1) % 4; markDirty(); });
   saveBtn.mousePressed(saveImage);
 
   updateDivLabel();
@@ -202,8 +204,6 @@ function styleControl(el) {
   el.style('cursor', 'pointer');
   el.elt.style.touchAction = 'manipulation';
 }
-
-/* ---------------- Mode / Params ---------------- */
 
 function setMode(m) {
   mode = m;
@@ -254,13 +254,15 @@ function handleFile(file) {
 
   loadImage(file.data, img => {
     srcSquare = cropCenterSquare(img);
-    if (srcSquare.width > MAX_WORKING_SIZE)
+    if (srcSquare.width > MAX_WORKING_SIZE) {
       srcSquare.resize(MAX_WORKING_SIZE, MAX_WORKING_SIZE);
+    }
 
     lensDivisions = 20;
     colorBands = 20;
     rotSteps = 0;
     toBW = false;
+
     ready = true;
     updateDivLabel();
     markDirty();
@@ -279,18 +281,27 @@ function ensureRendered() {
 function runPipeline() {
   let img = srcSquare;
 
-  // SINGLE rotation point (user only)
+  // user-visible rotation only
   if (rotSteps !== 0) img = rotateSquareBySteps(img, rotSteps);
   if (toBW) img = toGrayscale(img);
 
-  if (mode === MODE_COLOR) return renderColorAbstraction(img, colorBands);
+  // Color tab (no extra rotation rule here)
+  if (mode === MODE_COLOR) {
+    return renderColorAbstraction(img, colorBands);
+  }
 
+  // Lens tab
   if (lensDivisions === 0) return renderCentered(img);
   if (lensDivisions === 2) return renderMirrored(img);
 
+  // processed (>=4)
   const mirrored = renderMirrored(img);
   const step1 = reorderVerticalStripes(mirrored, lensDivisions);
-  return reorderHorizontalStripes(step1, lensDivisions);
+  const processed = reorderHorizontalStripes(step1, lensDivisions);
+
+  // NEW RULE:
+  // Rotate the displayed RESULT 90° clockwise when divisions >= 4
+  return rotateGraphicsCW90(processed);
 }
 
 /* ---------------- Render helpers ---------------- */
@@ -321,14 +332,30 @@ function renderMirrored(img) {
 
 /* ---------------- Utilities ---------------- */
 
+function rotateGraphicsCW90(srcG) {
+  const g = createGraphics(srcG.width, srcG.height);
+  g.noSmooth();
+  g.background(255);
+  g.push();
+  g.translate(srcG.width / 2, srcG.height / 2);
+  g.rotate(-HALF_PI); // 90° clockwise
+  g.imageMode(CENTER);
+  g.image(srcG, 0, 0);
+  g.pop();
+  return g;
+}
+
 function rotateSquareBySteps(img, steps) {
   const side = img.width;
   const g = createGraphics(side, side);
   g.noSmooth();
+  g.background(255);
+  g.push();
   g.translate(side / 2, side / 2);
-  g.rotate(HALF_PI * steps);
+  g.rotate(HALF_PI * steps); // user rotation (CCW per step)
   g.imageMode(CENTER);
   g.image(img, 0, 0);
+  g.pop();
   return g;
 }
 
@@ -362,18 +389,22 @@ function toGrayscale(img) {
 function mirrorHorizontal(img) {
   const g = createGraphics(img.width, img.height);
   g.noSmooth();
+  g.push();
   g.translate(img.width, 0);
   g.scale(-1, 1);
   g.image(img, 0, 0);
+  g.pop();
   return g;
 }
 
 function mirrorVertical(img) {
   const g = createGraphics(img.width, img.height);
   g.noSmooth();
+  g.push();
   g.translate(0, img.height);
   g.scale(1, -1);
   g.image(img, 0, 0);
+  g.pop();
   return g;
 }
 
@@ -390,6 +421,8 @@ function alternatingEndsOrder(n) {
 function reorderVerticalStripes(src, n) {
   const g = createGraphics(src.width, src.height);
   g.noSmooth();
+  g.background(255);
+
   let dx = 0;
   const order = alternatingEndsOrder(n);
 
@@ -397,7 +430,7 @@ function reorderVerticalStripes(src, n) {
     const idx = order[i];
     const x0 = Math.round((idx * src.width) / n);
     const x1 = Math.round(((idx + 1) * src.width) / n);
-    const w = x1 - x0;
+    const w = Math.max(1, x1 - x0);
     g.copy(src, x0, 0, w, src.height, dx, 0, w, src.height);
     dx += w;
   }
@@ -407,6 +440,8 @@ function reorderVerticalStripes(src, n) {
 function reorderHorizontalStripes(src, n) {
   const g = createGraphics(src.width, src.height);
   g.noSmooth();
+  g.background(255);
+
   let dy = 0;
   const order = alternatingEndsOrder(n);
 
@@ -414,7 +449,7 @@ function reorderHorizontalStripes(src, n) {
     const idx = order[i];
     const y0 = Math.round((idx * src.height) / n);
     const y1 = Math.round(((idx + 1) * src.height) / n);
-    const h = y1 - y0;
+    const h = Math.max(1, y1 - y0);
     g.copy(src, 0, y0, src.width, h, 0, dy, src.width, h);
     dy += h;
   }
@@ -431,6 +466,8 @@ function renderColorAbstraction(img, bands) {
   sample.loadPixels();
 
   const bandH = height / bands;
+  g.noStroke();
+
   for (let b = 0; b < bands; b++) {
     let r = 0, gg = 0, bb = 0, c = 0;
     const y0 = Math.floor((b * sample.height) / bands);
@@ -449,6 +486,7 @@ function renderColorAbstraction(img, bands) {
     if (c > 0) g.fill(r / c, gg / c, bb / c);
     g.rect(0, b * bandH, width, bandH + 1);
   }
+
   return g;
 }
 
@@ -466,5 +504,5 @@ function markDirty() {
 function saveImage() {
   if (!ready) return;
   ensureRendered();
-  saveCanvas(cachedG, 'reassembly_lens', 'png');
+  saveCanvas(cachedG, 'reassembly', 'png');
 }
