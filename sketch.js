@@ -1,6 +1,6 @@
 let srcImg = null;
-let srcSquare = null;       // cropped square, as-is (for Original + Mirrored)
-let srcSquareProc = null;   // same crop, rotated 90° clockwise (for stripe processing)
+let srcSquare = null;       // cropped square (original orientation)
+let srcSquareProc = null;   // cropped square, rotated 90° CW (used for stripe processing)
 let ready = false;
 
 // Two modes
@@ -14,7 +14,6 @@ let colorBands = 20;           // 1..N
 
 const LENS_MIN = 0;
 const LENS_MAX = 80;
-
 const COLOR_MIN = 1;
 const COLOR_MAX = 200;
 
@@ -49,11 +48,10 @@ function setup() {
   cachedG = createGraphics(width, height);
   cachedG.noSmooth();
 
-  // Prevent iOS pinch/scroll on the canvas only (do NOT block UI taps)
   const c = document.querySelector('canvas');
   c.style.touchAction = 'none';
-  c.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-  c.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  c.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+  c.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
   textAlign(CENTER, CENTER);
 }
@@ -75,11 +73,10 @@ function windowResized() {
   markDirty();
 }
 
-/* ---------------- Page + layout ---------------- */
+/* ---------------- Layout ---------------- */
 
 function setupPage() {
   document.body.style.margin = '0';
-  document.body.style.background = '#fff';
   document.body.style.height = '100vh';
   document.body.style.display = 'flex';
   document.body.style.alignItems = 'center';
@@ -91,52 +88,38 @@ function setupContainer() {
   container.parent(document.body);
   container.style('display', 'flex');
   container.style('align-items', 'center');
-  container.style('justify-content', 'center');
   container.style('gap', '14px');
 
   const c = document.querySelector('canvas');
   container.elt.appendChild(c);
-  c.style.display = 'block';
-  c.style.margin = '0';
 }
 
 function applyResponsiveLayout() {
-  const isSmall = Math.min(window.innerWidth, window.innerHeight) < 520;
-  const pad = isSmall ? 12 : 24;
+  const isHorizontal = window.innerWidth >= window.innerHeight;
+  const pad = 16;
   const gap = 14;
 
-  const isHorizontal = window.innerWidth >= window.innerHeight;
-
-  let availW, availH, canvasSide;
+  let canvasSide;
 
   if (isHorizontal) {
-    const uiWTarget = isSmall ? 200 : 260;
-    const uiW = Math.min(uiWTarget, Math.max(160, Math.floor(window.innerWidth * 0.32)));
-
-    availW = window.innerWidth - pad * 2 - uiW - gap;
-    availH = window.innerHeight - pad * 2;
-
-    canvasSide = Math.floor(Math.max(180, Math.min(availW, availH)));
-
+    const uiW = Math.min(260, Math.floor(window.innerWidth * 0.32));
+    canvasSide = Math.min(
+      window.innerHeight - pad * 2,
+      window.innerWidth - uiW - gap - pad * 2
+    );
     container.style('flex-direction', 'row');
-    uiWrap.style('width', `${uiW}px`);
-    uiWrap.style('max-width', `${uiW}px`);
+    uiWrap.style('width', uiW + 'px');
   } else {
-    const uiH = isSmall ? 190 : 180;
-
-    availW = window.innerWidth - pad * 2;
-    availH = window.innerHeight - pad * 2 - uiH - gap;
-
-    canvasSide = Math.floor(Math.max(180, Math.min(availW, availH)));
-
+    const uiH = 180;
+    canvasSide = Math.min(
+      window.innerWidth - pad * 2,
+      window.innerHeight - uiH - gap - pad * 2
+    );
     container.style('flex-direction', 'column');
-    uiWrap.style('width', `${canvasSide}px`);
-    uiWrap.style('max-width', `${canvasSide}px`);
+    uiWrap.style('width', canvasSide + 'px');
   }
 
-  canvasSide = Math.min(canvasSide, window.innerWidth - pad * 2);
-
-  // Avoid seams at the 2×2 split
+  canvasSide = Math.max(180, Math.floor(canvasSide));
   if (canvasSide % 2 === 1) canvasSide -= 1;
 
   resizeCanvas(canvasSide, canvasSide);
@@ -156,157 +139,94 @@ function setupUI() {
   uiWrap.style('gap', '10px');
   uiWrap.style('align-items', 'center');
 
-  // Tabs row
   tabRow = createDiv();
   tabRow.parent(uiWrap);
   tabRow.style('display', 'flex');
   tabRow.style('gap', '8px');
-  tabRow.style('align-items', 'center');
-  tabRow.style('justify-content', 'center');
-  tabRow.style('flex-wrap', 'nowrap');
 
   tabLensBtn = createButton('Lens');
-  tabLensBtn.parent(tabRow);
-  styleControl(tabLensBtn);
-
   tabColorBtn = createButton('Color');
+  tabLensBtn.parent(tabRow);
   tabColorBtn.parent(tabRow);
+  styleControl(tabLensBtn);
   styleControl(tabColorBtn);
 
   tabLensBtn.mousePressed(() => setMode(MODE_LENS));
   tabColorBtn.mousePressed(() => setMode(MODE_COLOR));
   updateTabStyles();
 
-  // Controls row
   controlsRow = createDiv();
   controlsRow.parent(uiWrap);
   controlsRow.style('display', 'flex');
   controlsRow.style('gap', '8px');
-  controlsRow.style('align-items', 'center');
-  controlsRow.style('justify-content', 'center');
   controlsRow.style('flex-wrap', 'wrap');
+  controlsRow.style('justify-content', 'center');
 
   fileInput = createFileInput(handleFile);
   fileInput.parent(controlsRow);
-  fileInput.attribute('accept', 'image/*');
   styleControl(fileInput);
-  fileInput.style('max-width', '180px');
 
-  // Stepper container for − / + (keeps them side by side)
   const stepper = createDiv();
   stepper.parent(controlsRow);
   stepper.style('display', 'flex');
   stepper.style('gap', '6px');
-  stepper.style('flex-wrap', 'nowrap');
-  stepper.style('align-items', 'center');
 
   minusBtn = createButton('−');
-  minusBtn.parent(stepper);
-  styleControl(minusBtn);
-
   plusBtn = createButton('+');
+  minusBtn.parent(stepper);
   plusBtn.parent(stepper);
+  styleControl(minusBtn);
   styleControl(plusBtn);
 
   bwBtn = createButton('B/W');
-  bwBtn.parent(controlsRow);
-  styleControl(bwBtn);
-
   rotBtn = createButton('Rotate');
-  rotBtn.parent(controlsRow);
-  styleControl(rotBtn);
-
   saveBtn = createButton('Save');
+  bwBtn.parent(controlsRow);
+  rotBtn.parent(controlsRow);
   saveBtn.parent(controlsRow);
+  styleControl(bwBtn);
+  styleControl(rotBtn);
   styleControl(saveBtn);
 
   divLabel = createDiv('');
   divLabel.parent(uiWrap);
-  divLabel.style('font-family', 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif');
   divLabel.style('font-size', '13px');
-  divLabel.style('color', '#000');
-  divLabel.style('letter-spacing', '0.02em');
-  divLabel.style('text-align', 'center');
-  divLabel.style('user-select', 'none');
+
+  minusBtn.mousePressed(() => stepDivisions(-1));
+  plusBtn.mousePressed(() => stepDivisions(+1));
+  bwBtn.mousePressed(() => { toBW = !toBW; markDirty(); });
+  rotBtn.mousePressed(() => { rotSteps = (rotSteps + 1) % 4; markDirty(); });
+  saveBtn.mousePressed(saveImage);
+
   updateDivLabel();
-
-  minusBtn.mousePressed(() => {
-    if (!ready) return;
-    stepDivisions(-1);
-  });
-
-  plusBtn.mousePressed(() => {
-    if (!ready) return;
-    stepDivisions(+1);
-  });
-
-  bwBtn.mousePressed(() => {
-    if (!ready) return;
-    toBW = !toBW;
-    markDirty();
-  });
-
-  rotBtn.mousePressed(() => {
-    if (!ready) return;
-    rotSteps = (rotSteps + 1) % 4;
-    markDirty();
-  });
-
-  saveBtn.mousePressed(() => {
-    if (!ready) return;
-    ensureRendered();
-    saveCanvas(
-      cachedG,
-      `result_${stamp()}_${mode}_${getActiveValue()}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`,
-      'png'
-    );
-  });
 }
 
 function styleControl(el) {
-  el.style('font-size', '14px');
-  el.style('padding', '8px 10px');
   el.style('border', '1px solid #000');
   el.style('background', '#fff');
-  el.style('border-radius', '0px');
+  el.style('border-radius', '0');
+  el.style('padding', '8px 10px');
   el.style('cursor', 'pointer');
-  el.style('pointer-events', 'auto');
-
-  el.style('min-width', '36px');
-  el.style('text-align', 'center');
-
   el.elt.style.touchAction = 'manipulation';
-  el.elt.style.webkitTapHighlightColor = 'transparent';
-  el.elt.style.userSelect = 'none';
 }
 
-function setMode(newMode) {
-  mode = newMode;
+function setMode(m) {
+  mode = m;
   updateTabStyles();
   updateDivLabel();
   markDirty();
 }
 
 function updateTabStyles() {
-  setTabStyle(tabLensBtn, mode === MODE_LENS);
-  setTabStyle(tabColorBtn, mode === MODE_COLOR);
-}
-
-function setTabStyle(btn, active) {
-  if (active) {
-    btn.style('background', '#000');
-    btn.style('color', '#fff');
-  } else {
-    btn.style('background', '#fff');
-    btn.style('color', '#000');
-  }
-}
-
-function getActiveValue() {
-  return mode === MODE_LENS ? lensDivisions : colorBands;
+  tabLensBtn.style('background', mode === MODE_LENS ? '#000' : '#fff');
+  tabLensBtn.style('color', mode === MODE_LENS ? '#fff' : '#000');
+  tabColorBtn.style('background', mode === MODE_COLOR ? '#000' : '#fff');
+  tabColorBtn.style('color', mode === MODE_COLOR ? '#fff' : '#000');
 }
 
 function stepDivisions(dir) {
+  if (!ready) return;
+
   if (mode === MODE_LENS) {
     lensDivisions = Math.max(LENS_MIN, lensDivisions + dir * 2);
     lensDivisions = normalizeLensDivisions(lensDivisions);
@@ -319,87 +239,17 @@ function stepDivisions(dir) {
 
 function updateDivLabel() {
   if (mode === MODE_LENS) {
-    const d = lensDivisions;
-    let label = `Divisions: ${d}`;
-    if (d === 0) label = 'Divisions: 0 (original)';
-    if (d === 2) label = 'Divisions: 2 (mirrored)';
-    if (d >= 4) label = `Divisions: ${d} (processed)`;
-    divLabel.html(label);
+    if (lensDivisions === 0) divLabel.html('Divisions: 0 (original)');
+    else if (lensDivisions === 2) divLabel.html('Divisions: 2 (mirrored)');
+    else divLabel.html(`Divisions: ${lensDivisions}`);
   } else {
     divLabel.html(`Bands: ${colorBands}`);
   }
 }
 
-// Allow only 0 or even >= 2
 function normalizeLensDivisions(n) {
   if (n <= 0) return 0;
-  if (n === 1) return 2;
   return Math.floor(n / 2) * 2;
-}
-
-/* ---------------- Keyboard controls ---------------- */
-
-function keyPressed() {
-  if (keyCode === RIGHT_ARROW) stepDivisions(+1);
-  if (keyCode === LEFT_ARROW) stepDivisions(-1);
-
-  if (keyCode === UP_ARROW) {
-    if (!ready) return;
-    if (mode === MODE_LENS) lensDivisions = normalizeLensDivisions(Math.min(LENS_MAX, lensDivisions + 10));
-    else colorBands = Math.min(COLOR_MAX, colorBands + 10);
-    updateDivLabel();
-    markDirty();
-  }
-
-  if (keyCode === DOWN_ARROW) {
-    if (!ready) return;
-    if (mode === MODE_LENS) lensDivisions = normalizeLensDivisions(Math.max(LENS_MIN, lensDivisions - 10));
-    else colorBands = Math.max(COLOR_MIN, colorBands - 10);
-    updateDivLabel();
-    markDirty();
-  }
-
-  if (key === 'b' || key === 'B') {
-    if (!ready) return;
-    toBW = !toBW;
-    markDirty();
-  }
-
-  if (key === 'r' || key === 'R') {
-    if (!ready) return;
-    rotSteps = (rotSteps + 1) % 4;
-    markDirty();
-  }
-
-  if (key === 's' || key === 'S') {
-    if (!ready) return;
-    ensureRendered();
-    saveCanvas(
-      cachedG,
-      `result_${stamp()}_${mode}_${getActiveValue()}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`,
-      'png'
-    );
-  }
-
-  if (key === '1') setMode(MODE_LENS);
-  if (key === '2') setMode(MODE_COLOR);
-}
-
-/* ---------------- Placeholder ---------------- */
-
-function drawPlaceholder() {
-  noStroke();
-  fill(230);
-  rect(0, 0, width, height);
-
-  noFill();
-  stroke(200);
-  rect(0.5, 0.5, width - 1, height - 1);
-
-  fill(120);
-  noStroke();
-  textSize(16);
-  text("Choose an image using the file input", width / 2, height / 2);
 }
 
 /* ---------------- Image loading ---------------- */
@@ -408,33 +258,25 @@ function handleFile(file) {
   if (!file || file.type !== 'image') return;
 
   loadImage(file.data, img => {
-    srcImg = img;
-
-    let sq = cropCenterSquare(srcImg);
+    let sq = cropCenterSquare(img);
     if (sq.width > MAX_WORKING_SIZE) sq.resize(MAX_WORKING_SIZE, MAX_WORKING_SIZE);
     srcSquare = sq;
 
-    // KEY CHANGE:
-    // Create a pre-rotated (90° clockwise) version used ONLY for stripe processing.
-    // Original and mirrored views still use srcSquare.
+    // IMPORTANT FIX:
+    // Pre-rotate 90° CLOCKWISE (negative HALF_PI)
     srcSquareProc = rotateCW90(srcSquare);
 
-    rotSteps = 0;
     lensDivisions = 20;
     colorBands = 20;
+    rotSteps = 0;
     toBW = false;
-
     ready = true;
     updateDivLabel();
     markDirty();
   });
 }
 
-/* ---------------- Rendering cache ---------------- */
-
-function markDirty() {
-  dirty = true;
-}
+/* ---------------- Rendering ---------------- */
 
 function ensureRendered() {
   if (!dirty) return;
@@ -443,190 +285,94 @@ function ensureRendered() {
   dirty = false;
 }
 
-/* ---------------- Pipeline ---------------- */
-
 function runPipeline() {
-  if (!srcSquare) return cachedG;
-
-  // Choose base image:
-  // - Lens mode: apply the hidden 90° CW pre-rotation ONLY when we are going to slice/reorder stripes (div >= 4)
-  // - Otherwise (original and mirrored states), do NOT apply that pre-rotation
-  // - Color mode uses the non-pre-rotated base by default
   let base = srcSquare;
 
   if (mode === MODE_LENS && lensDivisions >= 4) {
-    base = srcSquareProc || srcSquare;
+    base = srcSquareProc;
   }
 
-  // Apply user-facing adjustments
-  let oriented = rotateSquareBySteps(base, rotSteps);
-  if (toBW) oriented = toGrayscale(oriented);
+  let img = rotateSquareBySteps(base, rotSteps);
+  if (toBW) img = toGrayscale(img);
 
-  if (mode === MODE_COLOR) {
-    return renderColorAbstraction(oriented, colorBands);
-  }
+  if (mode === MODE_COLOR) return renderColorAbstraction(img, colorBands);
 
-  // MODE_LENS
-  const stripeCount = lensDivisions;
+  if (lensDivisions === 0) return renderCentered(img);
+  if (lensDivisions === 2) return renderMirrored(img);
 
-  // 0 = show original cropped square (no hidden pre-rotation)
-  if (stripeCount === 0) {
-    const g = createGraphics(width, height);
-    g.noSmooth();
-    g.background(255);
-    g.imageMode(CENTER);
-    const s = Math.min(width / oriented.width, height / oriented.height);
-    g.image(oriented, Math.floor(width / 2), Math.floor(height / 2), oriented.width * s, oriented.height * s);
-    return g;
-  }
-
-  // 2+ = mirrored base
-  const qW = Math.floor(width / 2);
-  const qH = Math.floor(height / 2);
-
-  let fitted = fitCenter(oriented, qW, qH);
-
-  const tl = fitted;
-  const tr = mirrorHorizontal(fitted);
-  const bl = mirrorVertical(fitted);
-  const br = mirrorVertical(tr);
-
-  const baseG = createGraphics(width, height);
-  baseG.noSmooth();
-  baseG.background(255);
-  baseG.imageMode(CORNER);
-
-  baseG.image(tl, 0, 0);
-  baseG.image(tr, qW, 0);
-  baseG.image(bl, 0, qH);
-  baseG.image(br, qW, qH);
-
-  // 2 = mirrored only (still no stripe slicing)
-  if (stripeCount === 2) return baseG;
-
-  // 4+ = reorder stripes (this is where the hidden 90° CW pre-rotation matters)
-  const step1 = reorderVerticalStripes(baseG, stripeCount);
-  const step2 = reorderHorizontalStripes(step1, stripeCount);
-  return step2;
+  const mirrored = renderMirrored(img);
+  const step1 = reorderVerticalStripes(mirrored, lensDivisions);
+  return reorderHorizontalStripes(step1, lensDivisions);
 }
 
-/* ---------------- Color abstraction ---------------- */
+/* ---------------- Render helpers ---------------- */
 
-function renderColorAbstraction(img, bands) {
+function renderCentered(img) {
   const g = createGraphics(width, height);
   g.noSmooth();
   g.background(255);
+  g.imageMode(CENTER);
+  const s = Math.min(width / img.width, height / img.height);
+  g.image(img, width / 2, height / 2, img.width * s, img.height * s);
+  return g;
+}
 
-  const sampleSide = Math.min(420, img.width);
-  const sample = createImage(sampleSide, sampleSide);
-  sample.copy(img, 0, 0, img.width, img.height, 0, 0, sampleSide, sampleSide);
-  sample.loadPixels();
+function renderMirrored(img) {
+  const qW = width / 2;
+  const qH = height / 2;
+  const fit = fitCenter(img, qW, qH);
 
-  const bandH = height / bands;
-  g.noStroke();
-
-  for (let b = 0; b < bands; b++) {
-    const y0 = Math.floor((b * sampleSide) / bands);
-    const y1 = Math.floor(((b + 1) * sampleSide) / bands);
-    const yA = Math.max(0, y0);
-    const yB = Math.max(yA + 1, y1);
-
-    let r = 0, gg = 0, bb = 0, count = 0;
-
-    const xStep = 2;
-    const yStep = 1;
-
-    for (let y = yA; y < yB; y += yStep) {
-      for (let x = 0; x < sampleSide; x += xStep) {
-        const idx = 4 * (y * sampleSide + x);
-        r += sample.pixels[idx + 0];
-        gg += sample.pixels[idx + 1];
-        bb += sample.pixels[idx + 2];
-        count++;
-      }
-    }
-
-    if (count > 0) {
-      r /= count; gg /= count; bb /= count;
-    }
-
-    g.fill(r, gg, bb);
-
-    const yCanvas = b * bandH;
-    const hCanvas = (b === bands - 1) ? (height - yCanvas) : bandH;
-    g.rect(0, yCanvas, width, hCanvas);
-  }
-
+  const g = createGraphics(width, height);
+  g.noSmooth();
+  g.image(fit, 0, 0);
+  g.image(mirrorHorizontal(fit), qW, 0);
+  g.image(mirrorVertical(fit), 0, qH);
+  g.image(mirrorVertical(mirrorHorizontal(fit)), qW, qH);
   return g;
 }
 
 /* ---------------- Utilities ---------------- */
 
-function stamp() {
-  const d = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  return (
-    d.getFullYear() +
-    pad(d.getMonth() + 1) +
-    pad(d.getDate()) + "_" +
-    pad(d.getHours()) +
-    pad(d.getMinutes()) +
-    pad(d.getSeconds())
-  );
-}
-
-function cropCenterSquare(img) {
-  const side = Math.min(img.width, img.height);
-  const x = Math.floor((img.width - side) / 2);
-  const y = Math.floor((img.height - side) / 2);
-  const out = createImage(side, side);
-  out.copy(img, x, y, side, side, 0, 0, side, side);
-  return out;
-}
-
-// Rotate a square image 90° clockwise once, at load time (hidden correction)
 function rotateCW90(img) {
   const side = img.width;
   const g = createGraphics(side, side);
   g.noSmooth();
-  g.background(255);
-  g.push();
   g.translate(side / 2, side / 2);
-  g.rotate(HALF_PI); // clockwise in p5.js coordinate system
+  g.rotate(-HALF_PI); // CORRECT clockwise rotation
   g.imageMode(CENTER);
   g.image(img, 0, 0);
-  g.pop();
   return g.get();
 }
 
 function rotateSquareBySteps(img, steps) {
-  steps = ((steps % 4) + 4) % 4;
   if (steps === 0) return img;
-
   const side = img.width;
   const g = createGraphics(side, side);
   g.noSmooth();
-  g.background(255);
-  g.push();
   g.translate(side / 2, side / 2);
   g.rotate(HALF_PI * steps);
   g.imageMode(CENTER);
   g.image(img, 0, 0);
-  g.pop();
   return g.get();
 }
 
-function fitCenter(img, w, h) {
-  const s = Math.min(w / img.width, h / img.height);
-  const rw = Math.round(img.width * s);
-  const rh = Math.round(img.height * s);
+function cropCenterSquare(img) {
+  const s = Math.min(img.width, img.height);
+  const x = (img.width - s) / 2;
+  const y = (img.height - s) / 2;
+  const out = createImage(s, s);
+  out.copy(img, x, y, s, s, 0, 0, s, s);
+  return out;
+}
 
+function fitCenter(img, w, h) {
   const g = createGraphics(w, h);
   g.noSmooth();
   g.background(255);
   g.imageMode(CENTER);
-  g.image(img, Math.floor(w / 2), Math.floor(h / 2), rw, rh);
-  return g.get();
+  const s = Math.min(w / img.width, h / img.height);
+  g.image(img, w / 2, h / 2, img.width * s, img.height * s);
+  return g;
 }
 
 function toGrayscale(img) {
@@ -634,79 +380,115 @@ function toGrayscale(img) {
   g.noSmooth();
   g.image(img, 0, 0);
   g.filter(GRAY);
-  return g.get();
+  return g;
 }
 
 function mirrorHorizontal(img) {
   const g = createGraphics(img.width, img.height);
   g.noSmooth();
-  g.push();
   g.translate(img.width, 0);
   g.scale(-1, 1);
   g.image(img, 0, 0);
-  g.pop();
-  return g.get();
+  return g;
 }
 
 function mirrorVertical(img) {
   const g = createGraphics(img.width, img.height);
   g.noSmooth();
-  g.push();
   g.translate(0, img.height);
   g.scale(1, -1);
   g.image(img, 0, 0);
-  g.pop();
-  return g.get();
+  return g;
 }
 
 function alternatingEndsOrder(n) {
   const order = [];
-  let left = 0, right = n - 1;
-  while (left <= right) {
-    if (left <= right) order.push(left++);
-    if (left <= right) order.push(right--);
+  let l = 0, r = n - 1;
+  while (l <= r) {
+    if (l <= r) order.push(l++);
+    if (l <= r) order.push(r--);
   }
   return order;
 }
 
-function reorderVerticalStripes(srcG, nStripes) {
-  const w = srcG.width, h = srcG.height;
-  const out = createGraphics(w, h);
-  out.noSmooth();
-  out.background(255);
+function reorderVerticalStripes(src, n) {
+  const g = createGraphics(src.width, src.height);
+  g.noSmooth();
+  let dx = 0;
+  const order = alternatingEndsOrder(n);
 
-  const order = alternatingEndsOrder(nStripes);
-
-  let dstX = 0;
-  for (let i = 0; i < nStripes; i++) {
+  for (let i = 0; i < n; i++) {
     const idx = order[i];
-    const x0 = Math.round((idx * w) / nStripes);
-    const x1 = Math.round(((idx + 1) * w) / nStripes);
-    const sw = Math.max(1, x1 - x0);
-
-    out.copy(srcG, x0, 0, sw, h, dstX, 0, sw, h);
-    dstX += sw;
+    const x0 = Math.round((idx * src.width) / n);
+    const x1 = Math.round(((idx + 1) * src.width) / n);
+    const w = x1 - x0;
+    g.copy(src, x0, 0, w, src.height, dx, 0, w, src.height);
+    dx += w;
   }
-  return out;
+  return g;
 }
 
-function reorderHorizontalStripes(srcG, nStripes) {
-  const w = srcG.width, h = srcG.height;
-  const out = createGraphics(w, h);
-  out.noSmooth();
-  out.background(255);
+function reorderHorizontalStripes(src, n) {
+  const g = createGraphics(src.width, src.height);
+  g.noSmooth();
+  let dy = 0;
+  const order = alternatingEndsOrder(n);
 
-  const order = alternatingEndsOrder(nStripes);
-
-  let dstY = 0;
-  for (let i = 0; i < nStripes; i++) {
+  for (let i = 0; i < n; i++) {
     const idx = order[i];
-    const y0 = Math.round((idx * h) / nStripes);
-    const y1 = Math.round(((idx + 1) * h) / nStripes);
-    const sh = Math.max(1, y1 - y0);
-
-    out.copy(srcG, 0, y0, w, sh, 0, dstY, w, sh);
-    dstY += sh;
+    const y0 = Math.round((idx * src.height) / n);
+    const y1 = Math.round(((idx + 1) * src.height) / n);
+    const h = y1 - y0;
+    g.copy(src, 0, y0, src.width, h, 0, dy, src.width, h);
+    dy += h;
   }
-  return out;
+  return g;
+}
+
+function renderColorAbstraction(img, bands) {
+  const g = createGraphics(width, height);
+  g.noSmooth();
+  g.background(255);
+
+  const sample = createImage(400, 400);
+  sample.copy(img, 0, 0, img.width, img.height, 0, 0, 400, 400);
+  sample.loadPixels();
+
+  const bandH = height / bands;
+  for (let b = 0; b < bands; b++) {
+    let r = 0, gg = 0, bb = 0, c = 0;
+    const y0 = Math.floor((b * sample.height) / bands);
+    const y1 = Math.floor(((b + 1) * sample.height) / bands);
+
+    for (let y = y0; y < y1; y++) {
+      for (let x = 0; x < sample.width; x += 2) {
+        const i = 4 * (y * sample.width + x);
+        r += sample.pixels[i];
+        gg += sample.pixels[i + 1];
+        bb += sample.pixels[i + 2];
+        c++;
+      }
+    }
+
+    if (c > 0) g.fill(r / c, gg / c, bb / c);
+    g.rect(0, b * bandH, width, bandH + 1);
+  }
+  return g;
+}
+
+function drawPlaceholder() {
+  background(230);
+  fill(120);
+  noStroke();
+  text('Choose an image', width / 2, height / 2);
+}
+
+function markDirty() {
+  dirty = true;
+}
+
+function saveImage() {
+  if (!ready) return;
+  ensureRendered();
+  saveCanvas(cachedG, 'reassembly_lens', 'png');
 }
