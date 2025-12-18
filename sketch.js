@@ -37,6 +37,9 @@ let colorFrameIndex = 0;
 let lastFrameMs = 0;
 const frameIntervalMs = 180;
 
+// Global keyboard hook flag
+let keyboardHooked = false;
+
 /* ---------------- Setup ---------------- */
 
 function setup() {
@@ -54,8 +57,9 @@ function setup() {
 
   const cnv = document.querySelector('canvas');
   cnv.style.touchAction = 'none';
-  cnv.tabIndex = 0;
-  cnv.addEventListener('pointerdown', () => cnv.focus());
+
+  // ✅ Robust keyboard support (works regardless of focus)
+  hookGlobalKeyboard();
 
   textAlign(CENTER, CENTER);
 }
@@ -84,6 +88,42 @@ function draw() {
 function windowResized() {
   applyResponsiveLayout();
   markDirty();
+}
+
+/* ---------------- Global keyboard ---------------- */
+
+function hookGlobalKeyboard() {
+  if (keyboardHooked) return;
+  keyboardHooked = true;
+
+  window.addEventListener('keydown', (e) => {
+    // Ignore typing into input fields (safety)
+    const t = e.target;
+    const tag = t && t.tagName ? t.tagName.toLowerCase() : '';
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+    // prevent page scroll on arrows/space
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === ' ' ) {
+      e.preventDefault();
+    }
+
+    // Mode switching always allowed
+    if (e.key === '1') { setMode(MODE_LENS); return; }
+    if (e.key === '2') { setMode(MODE_COLOR); return; }
+
+    if (!ready) return;
+
+    // Step with arrows
+    if (e.key === 'ArrowLeft') { stepValue(-1); return; }
+    if (e.key === 'ArrowRight') { stepValue(+1); return; }
+
+    // Toggles
+    if (e.key === 'b' || e.key === 'B') { toBW = !toBW; markDirty(); return; }
+    if (e.key === 'r' || e.key === 'R') { rotSteps = (rotSteps + 1) % 4; markDirty(); return; }
+
+    // Save
+    if (e.key === 's' || e.key === 'S') { saveImage(); return; }
+  }, { passive: false });
 }
 
 /* ---------------- Layout ---------------- */
@@ -172,7 +212,6 @@ function setupUI() {
   controlsRow.style('flex-wrap', 'wrap');
   controlsRow.style('justify-content', 'center');
 
-  // --- Custom "Choose file" button that matches style ---
   fileBtn = createButton('Choose image');
   fileBtn.parent(controlsRow);
   styleControl(fileBtn);
@@ -180,7 +219,6 @@ function setupUI() {
   fileInput = createFileInput(handleFile);
   fileInput.parent(controlsRow);
 
-  // Hide the real input completely (no filename shown)
   fileInput.elt.style.position = 'absolute';
   fileInput.elt.style.left = '-9999px';
   fileInput.elt.style.width = '1px';
@@ -234,7 +272,6 @@ function styleControl(el) {
   el.style('border-radius', '0');
   el.style('padding', '8px 10px');
   el.style('cursor', 'pointer');
-
   el.elt.style.touchAction = 'manipulation';
   el.elt.style.webkitTapHighlightColor = 'transparent';
   el.elt.style.userSelect = 'none';
@@ -285,23 +322,6 @@ function updateLabel() {
 function normalizeLensDivisions(n) {
   if (n <= 0) return 0;
   return Math.floor(n / 2) * 2;
-}
-
-/* ---------------- Keyboard controls ---------------- */
-
-function keyPressed() {
-  // Keep keyboard interaction working even if focus moves
-  if (key === '1') { setMode(MODE_LENS); return; }
-  if (key === '2') { setMode(MODE_COLOR); return; }
-
-  if (!ready) return;
-
-  if (keyCode === LEFT_ARROW) { stepValue(-1); return; }
-  if (keyCode === RIGHT_ARROW) { stepValue(+1); return; }
-
-  if (key === 'b' || key === 'B') { toBW = !toBW; markDirty(); return; }
-  if (key === 'r' || key === 'R') { rotSteps = (rotSteps + 1) % 4; markDirty(); return; }
-  if (key === 's' || key === 'S') { saveImage(); return; }
 }
 
 /* ---------------- Image loading ---------------- */
@@ -524,11 +544,6 @@ function reorderHorizontalStripes(src, n) {
   return g;
 }
 
-/*
-  Color bands:
-  N frames and N columns (square sampling)
-  returns: Array(N) of Array(N) RGB triplets
-*/
 function buildColorBands(img, n) {
   const frames = n;
   const cols = n;
