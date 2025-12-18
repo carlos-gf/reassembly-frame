@@ -1,29 +1,113 @@
-let srcImg = null;       // p5.Image loaded
-let srcSquare = null;    // p5.Image center-cropped square
+let srcImg = null;
+let srcSquare = null;
 let ready = false;
 
 let stripeCount = 20;
-let minStripes = 0;      // allow 0 (mirrored only)
-let maxStripes = 80;     // keep even
+let minStripes = 0;
+let maxStripes = 80;
 
 let toBW = false;
-let rotSteps = 3;        // default (your “press R three times” fix)
+let rotSteps = 3;
 
 let fileInput;
+let loadBtn, bwBtn, rotBtn, saveBtn, divMinusBtn, divPlusBtn;
+
+// caching
+let cachedG = null;
+let dirty = true;
 
 function setup() {
   createCanvas(900, 900);
   pixelDensity(1);
+  textAlign(CENTER, CENTER);
 
-  // File input (works on iPad Safari too)
+  // File input (hidden but used by the visible button)
   fileInput = createFileInput(handleFile);
-  fileInput.position(12, 12);
-  fileInput.style('opacity', '0');      // hide default UI
+  fileInput.position(0, 0);
+  fileInput.style('opacity', '0');
   fileInput.style('width', '1px');
   fileInput.style('height', '1px');
 
-  textAlign(CENTER, CENTER);
-  textSize(16);
+  // Visible UI (works on iPad)
+  loadBtn = createButton('Load');
+  bwBtn = createButton('B/W');
+  rotBtn = createButton('Rotate');
+  saveBtn = createButton('Save');
+  divMinusBtn = createButton('−');
+  divPlusBtn = createButton('+');
+
+  // Simple styling
+  [loadBtn, bwBtn, rotBtn, saveBtn, divMinusBtn, divPlusBtn].forEach(b => {
+    b.style('font-size', '14px');
+    b.style('padding', '8px 10px');
+    b.style('border', '1px solid #000');
+    b.style('background', '#fff');
+    b.style('border-radius', '6px');
+  });
+
+  // Layout (top-right row)
+  layoutUI();
+
+  // Handlers
+  loadBtn.mousePressed(() => fileInput.elt.click());
+
+  bwBtn.mousePressed(() => {
+    toBW = !toBW;
+    markDirty();
+  });
+
+  rotBtn.mousePressed(() => {
+    rotSteps = (rotSteps + 1) % 4;
+    markDirty();
+  });
+
+  saveBtn.mousePressed(() => {
+    if (!ready) return;
+    ensureRendered();
+    saveCanvas(cachedG, `result_${stamp()}_div${stripeCount}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`, 'png');
+  });
+
+  divMinusBtn.mousePressed(() => {
+    stripeCount = Math.max(minStripes, stripeCount - 2);
+    if (stripeCount > 0) stripeCount = Math.floor(stripeCount / 2) * 2;
+    markDirty();
+  });
+
+  divPlusBtn.mousePressed(() => {
+    stripeCount = Math.min(maxStripes, stripeCount + 2);
+    if (stripeCount > 0) stripeCount = Math.floor(stripeCount / 2) * 2;
+    markDirty();
+  });
+
+  cachedG = createGraphics(width, height);
+}
+
+function windowResized() {
+  // Optional: keep it fixed for now
+  // If you later want responsive, we’ll resize and markDirty()
+  layoutUI();
+}
+
+function layoutUI() {
+  const pad = 12;
+  const y = pad;
+
+  // Measure rough widths by positioning in a row from the right
+  // (p5 DOM buttons don’t expose width reliably before render, so we keep it simple)
+  const btnW = 70;
+  const smallW = 44;
+  const gap = 8;
+
+  // right-aligned row: [Load][B/W][Rotate][Save][−][+]
+  let x = window.innerWidth - pad;
+
+  divPlusBtn.position(x - smallW, y); x -= (smallW + gap);
+  divMinusBtn.position(x - smallW, y); x -= (smallW + gap);
+
+  saveBtn.position(x - btnW, y); x -= (btnW + gap);
+  rotBtn.position(x - btnW, y); x -= (btnW + gap);
+  bwBtn.position(x - btnW, y); x -= (btnW + gap);
+  loadBtn.position(x - btnW, y);
 }
 
 function draw() {
@@ -31,39 +115,33 @@ function draw() {
 
   if (!ready) {
     fill(20);
-    text("Tap to load an image", width / 2, height / 2);
+    textSize(16);
+    text("Load an image using the button in the top-right", width / 2, height / 2);
     drawHUD();
     return;
   }
 
-  const result = runPipeline();
-  image(result, 0, 0, width, height);
+  ensureRendered();
+  image(cachedG, 0, 0);
 
   drawHUD();
 }
 
-function mousePressed() {
-  if (!ready) {
-    fileInput.elt.click();
-  }
+/* ---------- iPad tap handling ---------- */
+function touchStarted() {
+  // prevent page scroll / zoom gestures interfering
+  return false;
 }
 
+/* ---------- keyboard (optional) ---------- */
 function keyPressed() {
-  // Divisions (even steps)
-  if (keyCode === RIGHT_ARROW) stripeCount = Math.min(maxStripes, stripeCount + 2);
-  if (keyCode === LEFT_ARROW)  stripeCount = Math.max(minStripes, stripeCount - 2);
-  if (keyCode === UP_ARROW)    stripeCount = Math.min(maxStripes, stripeCount + 10);
-  if (keyCode === DOWN_ARROW)  stripeCount = Math.max(minStripes, stripeCount - 10);
+  if (key === 'b' || key === 'B') { toBW = !toBW; markDirty(); }
+  if (key === 'r' || key === 'R') { rotSteps = (rotSteps + 1) % 4; markDirty(); }
+  if (key === 'l' || key === 'L') { fileInput.elt.click(); }
 
-  if (key === 'b' || key === 'B') toBW = !toBW;
-  if (key === 'r' || key === 'R') rotSteps = (rotSteps + 1) % 4;
-  if (key === 'e' || key === 'E') rotSteps = (rotSteps + 3) % 4;
+  if (keyCode === RIGHT_ARROW) { stripeCount = Math.min(maxStripes, stripeCount + 2); markDirty(); }
+  if (keyCode === LEFT_ARROW)  { stripeCount = Math.max(minStripes, stripeCount - 2); markDirty(); }
 
-  if (key === 'l' || key === 'L') fileInput.elt.click();
-  if (key === 's' || key === 'S') if (ready) saveCurrentResult();
-  if (key === 'o' || key === 'O') if (ready) saveOriginalCrop();
-
-  // safety evenness (except 0)
   if (stripeCount > 0) stripeCount = Math.floor(stripeCount / 2) * 2;
 }
 
@@ -73,14 +151,24 @@ function handleFile(file) {
   loadImage(file.data, img => {
     srcImg = img;
     srcSquare = cropCenterSquare(srcImg);
-
     rotSteps = 3;
     stripeCount = 20;
     ready = true;
+    markDirty();
   });
 }
 
-/* ---------------- Pipeline ---------------- */
+function markDirty() {
+  dirty = true;
+}
+
+function ensureRendered() {
+  if (!dirty) return;
+  cachedG = runPipeline();
+  dirty = false;
+}
+
+/* ---------- pipeline (renders once per change) ---------- */
 
 function runPipeline() {
   const qW = Math.floor(width / 2);
@@ -88,10 +176,8 @@ function runPipeline() {
 
   let oriented = rotateSquareBySteps(srcSquare, rotSteps);
   let fitted = fitCenter(oriented, qW, qH);
-
   if (toBW) fitted = toGrayscale(fitted);
 
-  // 2x2 mirrored base
   const tl = fitted;
   const tr = mirrorHorizontal(fitted);
   const bl = mirrorVertical(fitted);
@@ -104,16 +190,14 @@ function runPipeline() {
   base.image(bl, 0, qH);
   base.image(br, qW, qH);
 
-  // 0 or 1 divisions: just mirrored base
   if (stripeCount <= 1) return base;
 
-  // reorder stripes
   const step1 = reorderVerticalStripes(base, stripeCount);
   const step2 = reorderHorizontalStripes(step1, stripeCount);
   return step2;
 }
 
-/* ---------------- Saving ---------------- */
+/* ---------- saving helpers ---------- */
 
 function stamp() {
   const d = new Date();
@@ -128,22 +212,7 @@ function stamp() {
   );
 }
 
-function saveCurrentResult() {
-  const g = runPipeline();
-  saveCanvas(g, `result_${stamp()}_div${stripeCount}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`, 'png');
-}
-
-function saveOriginalCrop() {
-  let oriented = rotateSquareBySteps(srcSquare, rotSteps);
-  if (toBW) oriented = toGrayscale(oriented);
-
-  // draw into a graphics so we can save cleanly
-  const g = createGraphics(oriented.width, oriented.height);
-  g.image(oriented, 0, 0);
-  saveCanvas(g, `originalCrop_${stamp()}${toBW ? "_bw" : ""}_rot${rotSteps * 90}`, 'png');
-}
-
-/* ---------------- Stripe logic ---------------- */
+/* ---------- stripe logic ---------- */
 
 function alternatingEndsOrder(n) {
   const order = [];
@@ -197,7 +266,7 @@ function reorderHorizontalStripes(srcG, nStripes) {
   return out;
 }
 
-/* ---------------- Image helpers ---------------- */
+/* ---------- image helpers ---------- */
 
 function cropCenterSquare(img) {
   const side = Math.min(img.width, img.height);
@@ -213,7 +282,7 @@ function rotateSquareBySteps(img, steps) {
   steps = ((steps % 4) + 4) % 4;
   if (steps === 0) return img;
 
-  const side = img.width; // square
+  const side = img.width;
   const g = createGraphics(side, side);
   g.background(255);
   g.push();
@@ -264,7 +333,7 @@ function mirrorVertical(img) {
   return g.get();
 }
 
-/* ---------------- HUD ---------------- */
+/* ---------- HUD ---------- */
 
 function drawHUD() {
   push();
@@ -274,10 +343,7 @@ function drawHUD() {
   textSize(12);
 
   const bw = toBW ? "ON" : "OFF";
-  const hud =
-    `Tap: load (or press L)   B: B/W(${bw})   R/E: rotate   S: save result   O: save crop   ` +
-    `Div: ${stripeCount} (0 mirrored, arrows change)`;
-
-  text(hud, 12, height - 24);
+  const hud = `Div: ${stripeCount}  |  B/W: ${bw}  |  Rot: ${rotSteps * 90}°`;
+  text(hud, 12, height - 22);
   pop();
 }
